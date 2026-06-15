@@ -33,4 +33,28 @@
     <sys:String x:Key="str_15min">15 நிமிடம்</sys:String>
     <sys:String x:Key="str_30min">30 நிமிடம்</sys:String>
     <sys:String x:Key="str_60min">60 நிமிடம்</sys:String>
+    <sys:String x:Key="str_VideoAdjustments">வீடியோ சரிசெய்தல்</sys:String>
+    <sys:String x:Key="str_Brightness">ஒளி</sys:String>
+    <sys:String x:Key="str_Contrast">கான்ட்ராஸ்ட்</sys:String>
+    <sys:String x:Key="str_Saturation">செறிவு</sys:String>
+    <sys:String x:Key="str_Gamma">காமா</sys:String>
+    <sys:String x:Key="str_Hue">நிறம்</sys:String>
+    <sys:String x:Key="str_ResetAll">அனைத்தையும் மீட்டமை</sys:String>
+    <sys:String x:Key="str_SubtitleSettings">வசன அமைப்புகள்</sys:String>
+    <sys:String x:Key="str_FontSize">எழுத்துரு அளவு</sys:String>
+    <sys:String x:Key="str_Font">எழுத்துரு</sys:String>
+    <sys:String x:Key="str_TextColor">உரை நிறம்</sys:String>
+    <sys:String x:Key="str_Outline">வெளிக்கோடு</sys:String>
+    <sys:String x:Key="str_Background">பின்னணி</sys:String>
+    <sys:String x:Key="str_SubtitleStyleNote">நீங்கள் அடுத்து திறக்கும் கோப்பிற்கு பொருந்தும்.</sys:String>
+    <!-- TODO: translate -->
+    <sys:String x:Key="str_PlaybackRate">Playback Rate</sys:String>
+    <sys:String x:Key="str_AudioTrack">Audio Track</sys:String>
+    <sys:String x:Key="str_SubtitleTrack">Subtitle Track</sys:String>
+    <sys:String x:Key="str_AlwaysOnTop">Always on Top</sys:String>
+    <sys:String x:Key="str_HardwareAcceleration">Hardware Acceleration</sys:String>
+    <sys:String x:Key="str_ViewInfo">View Info</sys:String>
+    <sys:String x:Key="str_Settings">Settings</sys:String>
+    <sys:String x:Key="str_RecentFiles">Recent Files</sys:String>
 </ResourceDictionary>
+

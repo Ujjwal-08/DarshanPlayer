@@ -33,4 +33,28 @@
     <sys:String x:Key="str_15min">15 నిమిషాలు</sys:String>
     <sys:String x:Key="str_30min">30 నిమిషాలు</sys:String>
     <sys:String x:Key="str_60min">60 నిమిషాలు</sys:String>
+    <sys:String x:Key="str_VideoAdjustments">వీడియో సర్దుబాట్లు</sys:String>
+    <sys:String x:Key="str_Brightness">ప్రకాశం</sys:String>
+    <sys:String x:Key="str_Contrast">కాంట్రాస్ట్</sys:String>
+    <sys:String x:Key="str_Saturation">సంతృప్తత</sys:String>
+    <sys:String x:Key="str_Gamma">గామా</sys:String>
+    <sys:String x:Key="str_Hue">వర్ణఛాయ</sys:String>
+    <sys:String x:Key="str_ResetAll">అన్నీ రీసెట్ చేయి</sys:String>
+    <sys:String x:Key="str_SubtitleSettings">సబ్‌టైటిల్ సెట్టింగ్‌లు</sys:String>
+    <sys:String x:Key="str_FontSize">ఫాంట్ పరిమాణం</sys:String>
+    <sys:String x:Key="str_Font">ఫాంట్</sys:String>
+    <sys:String x:Key="str_TextColor">టెక్స్ట్ రంగు</sys:String>
+    <sys:String x:Key="str_Outline">అవుట్‌లైన్</sys:String>
+    <sys:String x:Key="str_Background">నేపథ్యం</sys:String>
+    <sys:String x:Key="str_SubtitleStyleNote">మీరు తదుపరి తెరిచే ఫైల్‌కు వర్తిస్తుంది.</sys:String>
+    <!-- TODO: translate -->
+    <sys:String x:Key="str_PlaybackRate">Playback Rate</sys:String>
+    <sys:String x:Key="str_AudioTrack">Audio Track</sys:String>
+    <sys:String x:Key="str_SubtitleTrack">Subtitle Track</sys:String>
+    <sys:String x:Key="str_AlwaysOnTop">Always on Top</sys:String>
+    <sys:String x:Key="str_HardwareAcceleration">Hardware Acceleration</sys:String>
+    <sys:String x:Key="str_ViewInfo">View Info</sys:String>
+    <sys:String x:Key="str_Settings">Settings</sys:String>
+    <sys:String x:Key="str_RecentFiles">Recent Files</sys:String>
 </ResourceDictionary>
+

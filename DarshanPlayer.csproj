@@ -1,16 +1,48 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+
+    <!-- Release Info & Metadata -->
+    <Version>1.1.0</Version>
+    <Authors>Ujjwal</Authors>
+    <Company>Ujjwal</Company>
+    <Product>Darshan Player</Product>
+    <Description>A beautiful and lightweight local media player for Windows.</Description>
+    <Copyright>Copyright © 2026</Copyright>
+    <NeutralLanguage>en</NeutralLanguage>
+    
+    <!-- Self-contained Publish Settings -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSelfContained>true</PublishSelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+
+    <!-- This will link the exe icon to an 'icon.ico' file in your project root once you add it -->
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+    <DefaultItemExcludes>$(DefaultItemExcludes);DarshanPlayer.Tests\**</DefaultItemExcludes>
+    <!-- Velopack requires an explicit Main so WPF's auto-generated one is suppressed -->
+    <StartupObject>DarshanPlayer.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <PackageReference Include="MahApps.Metro.IconPacks.Material" Version="6.2.1" />
+    <Resource Include="icon.ico" />
+    <!-- Ensure the icon is copied to the build output so the WiX project can reference it -->
+    <None Include="icon.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <PackageReference Include="LibVLCSharp.WPF" Version="3.9.6" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23" />
+    <PackageReference Include="Velopack" Version="0.0.915" />
   </ItemGroup>
 
 </Project>

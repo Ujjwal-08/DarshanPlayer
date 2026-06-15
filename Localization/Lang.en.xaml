@@ -33,4 +33,27 @@
     <sys:String x:Key="str_15min">15 min</sys:String>
     <sys:String x:Key="str_30min">30 min</sys:String>
     <sys:String x:Key="str_60min">60 min</sys:String>
+    <sys:String x:Key="str_VideoAdjustments">Video Adjustments</sys:String>
+    <sys:String x:Key="str_Brightness">Brightness</sys:String>
+    <sys:String x:Key="str_Contrast">Contrast</sys:String>
+    <sys:String x:Key="str_Saturation">Saturation</sys:String>
+    <sys:String x:Key="str_Gamma">Gamma</sys:String>
+    <sys:String x:Key="str_Hue">Hue</sys:String>
+    <sys:String x:Key="str_ResetAll">Reset All</sys:String>
+    <sys:String x:Key="str_SubtitleSettings">Subtitle Settings</sys:String>
+    <sys:String x:Key="str_FontSize">Font Size</sys:String>
+    <sys:String x:Key="str_Font">Font</sys:String>
+    <sys:String x:Key="str_TextColor">Text Color</sys:String>
+    <sys:String x:Key="str_Outline">Outline</sys:String>
+    <sys:String x:Key="str_Background">Background</sys:String>
+    <sys:String x:Key="str_SubtitleStyleNote">Applies to the next file you open.</sys:String>
+    <sys:String x:Key="str_PlaybackRate">Playback Rate</sys:String>
+    <sys:String x:Key="str_AudioTrack">Audio Track</sys:String>
+    <sys:String x:Key="str_SubtitleTrack">Subtitle Track</sys:String>
+    <sys:String x:Key="str_AlwaysOnTop">Always on Top</sys:String>
+    <sys:String x:Key="str_HardwareAcceleration">Hardware Acceleration</sys:String>
+    <sys:String x:Key="str_ViewInfo">View Info</sys:String>
+    <sys:String x:Key="str_Settings">Settings</sys:String>
+    <sys:String x:Key="str_RecentFiles">Recent Files</sys:String>
 </ResourceDictionary>
+

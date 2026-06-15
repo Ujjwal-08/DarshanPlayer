@@ -18,6 +18,7 @@
     <Color x:Key="SeekFillColor">#7C5CFC</Color>
     <Color x:Key="TrackColor">#2A3050</Color>
     <Color x:Key="DangerColor">#FF4D6A</Color>
+    <Color x:Key="TrayBgColor">#DD11131A</Color>
 
     <SolidColorBrush x:Key="BgDeepBrush" Color="{StaticResource BgDeepColor}"/>
     <SolidColorBrush x:Key="BgPanelBrush" Color="{StaticResource BgPanelColor}"/>
@@ -31,6 +32,10 @@
     <SolidColorBrush x:Key="TextMutedBrush" Color="{StaticResource TextMutedColor}"/>
     <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}"/>
     <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}"/>
+    <SolidColorBrush x:Key="TrayBgBrush" Color="{StaticResource TrayBgColor}"/>
+
+    <FontFamily x:Key="IconFontFamily">Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol</FontFamily>
+    <FontFamily x:Key="AppFontFamily">Segoe UI, Calibri, DejaVu Sans</FontFamily>
 
     <!-- ═══════════════════════════════════════════
          ICON BUTTON (circular)
@@ -40,6 +45,7 @@
         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/>
         <Setter Property="FontSize" Value="16"/>
         <Setter Property="Width" Value="36"/>
         <Setter Property="Height" Value="36"/>
@@ -67,6 +73,7 @@
     <Style x:Key="PlayBtn" TargetType="Button" BasedOn="{StaticResource IconBtn}">
         <Setter Property="Width" Value="48"/>
         <Setter Property="Height" Value="48"/>
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/>
         <Setter Property="FontSize" Value="20"/>
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="Template">
@@ -254,13 +261,13 @@
                         </ToggleButton>
                         <Popup IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
                             <Border Background="{StaticResource BgCardBrush}"
-                                    BorderBrush="{StaticResource AccentGlowBrush}" BorderThickness="1"
+                                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
                                     CornerRadius="8" Margin="0,4,0,0">
                                 <Border.Effect>
-                                    <DropShadowEffect BlurRadius="20" Opacity="0.5" ShadowDepth="4"/>
+                                    <DropShadowEffect BlurRadius="15" Opacity="0.4" ShadowDepth="2"/>
                                 </Border.Effect>
-                                <ScrollViewer MaxHeight="200">
-                                    <ItemsPresenter/>
+                                <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto">
+                                    <ItemsPresenter Margin="4"/>
                                 </ScrollViewer>
                             </Border>
                         </Popup>
@@ -396,6 +403,7 @@
     ═══════════════════════════════════════════ -->
     <Style TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/>
     </Style>
 
     <Style TargetType="Label">
@@ -404,28 +412,81 @@
 
     <Style TargetType="ContextMenu">
         <Setter Property="Background" Value="{StaticResource BgPanelBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="2"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="10">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="20" Opacity="0.4" ShadowDepth="4"/>
+                        </Border.Effect>
+                        <ScrollViewer Margin="2">
+                            <ItemsPresenter/>
+                        </ScrollViewer>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style TargetType="MenuItem">
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="FontSize" Value="13"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="MenuItem">
-                    <Border x:Name="bd" Background="Transparent" Padding="8,6" CornerRadius="4" Margin="2">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="Icon"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="Shortcut"/>
-                            </Grid.ColumnDefinitions>
-                            <ContentPresenter Grid.Column="1" ContentSource="Header" VerticalAlignment="Center" Margin="8,0"/>
-                        </Grid>
-                    </Border>
+                    <Grid>
+                        <Border x:Name="bd" Background="Transparent" Padding="8,6" CornerRadius="6" Margin="2">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="28" SharedSizeGroup="Icon"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="Shortcut"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <Grid x:Name="IconArea" Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <ContentPresenter x:Name="Icon" ContentSource="Icon" Width="16" Height="16"/>
+                                    <TextBlock x:Name="CheckMark" Text="&#xE73E;" FontFamily="{StaticResource IconFontFamily}" 
+                                               FontSize="12" Foreground="{StaticResource AccentLightBrush}" 
+                                               Visibility="Collapsed"/>
+                                </Grid>
+
+                                <ContentPresenter Grid.Column="1" ContentSource="Header" VerticalAlignment="Center" Margin="8,0"/>
+                                
+                                <TextBlock x:Name="Arrow" Grid.Column="2" Text="&#xE76C;" FontFamily="{StaticResource IconFontFamily}" 
+                                           Visibility="Collapsed" VerticalAlignment="Center" 
+                                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="10"/>
+                            </Grid>
+                        </Border>
+                        <Popup x:Name="SubMenuPopup" IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}" 
+                               Placement="Right" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                            <Border Background="{StaticResource BgPanelBrush}" BorderBrush="{StaticResource BorderBrush}" 
+                                    BorderThickness="1" CornerRadius="8" Margin="4">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="15" Opacity="0.3" ShadowDepth="2"/>
+                                </Border.Effect>
+                                <ScrollViewer Margin="2">
+                                    <ItemsPresenter Grid.IsSharedSizeScope="True"/>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="Icon" Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
+                        <Trigger Property="IsHighlighted" Value="True">
                             <Setter TargetName="bd" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                        </Trigger>
+                        <Trigger Property="HasItems" Value="True">
+                            <Setter TargetName="Arrow" Property="Visibility" Value="Visible"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>

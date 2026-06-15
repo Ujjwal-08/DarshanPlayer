@@ -33,4 +33,28 @@
     <sys:String x:Key="str_15min">15 മിനിറ്റ്</sys:String>
     <sys:String x:Key="str_30min">30 മിനിറ്റ്</sys:String>
     <sys:String x:Key="str_60min">60 മിനിറ്റ്</sys:String>
+    <sys:String x:Key="str_VideoAdjustments">വീഡിയോ ക്രമീകരണങ്ങൾ</sys:String>
+    <sys:String x:Key="str_Brightness">തെളിച്ചം</sys:String>
+    <sys:String x:Key="str_Contrast">കോൺട്രാസ്റ്റ്</sys:String>
+    <sys:String x:Key="str_Saturation">സാച്ചുറേഷൻ</sys:String>
+    <sys:String x:Key="str_Gamma">ഗാമ</sys:String>
+    <sys:String x:Key="str_Hue">വർണ്ണച്ഛായ</sys:String>
+    <sys:String x:Key="str_ResetAll">എല്ലാം പുനഃസജ്ജമാക്കുക</sys:String>
+    <sys:String x:Key="str_SubtitleSettings">സബ്ടൈറ്റിൽ ക്രമീകരണങ്ങൾ</sys:String>
+    <sys:String x:Key="str_FontSize">ഫോണ്ട് വലുപ്പം</sys:String>
+    <sys:String x:Key="str_Font">ഫോണ്ട്</sys:String>
+    <sys:String x:Key="str_TextColor">ടെക്സ്റ്റ് നിറം</sys:String>
+    <sys:String x:Key="str_Outline">ഔട്ട്‌ലൈൻ</sys:String>
+    <sys:String x:Key="str_Background">പശ്ചാത്തലം</sys:String>
+    <sys:String x:Key="str_SubtitleStyleNote">നിങ്ങൾ അടുത്തതായി തുറക്കുന്ന ഫയലിന് ബാധകമാകും.</sys:String>
+    <!-- TODO: translate -->
+    <sys:String x:Key="str_PlaybackRate">Playback Rate</sys:String>
+    <sys:String x:Key="str_AudioTrack">Audio Track</sys:String>
+    <sys:String x:Key="str_SubtitleTrack">Subtitle Track</sys:String>
+    <sys:String x:Key="str_AlwaysOnTop">Always on Top</sys:String>
+    <sys:String x:Key="str_HardwareAcceleration">Hardware Acceleration</sys:String>
+    <sys:String x:Key="str_ViewInfo">View Info</sys:String>
+    <sys:String x:Key="str_Settings">Settings</sys:String>
+    <sys:String x:Key="str_RecentFiles">Recent Files</sys:String>
 </ResourceDictionary>
+

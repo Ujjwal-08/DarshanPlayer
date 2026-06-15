@@ -33,4 +33,28 @@
     <sys:String x:Key="str_15min">15 মিনিট</sys:String>
     <sys:String x:Key="str_30min">30 মিনিট</sys:String>
     <sys:String x:Key="str_60min">60 মিনিট</sys:String>
+    <sys:String x:Key="str_VideoAdjustments">ভিডিও সমন্বয়</sys:String>
+    <sys:String x:Key="str_Brightness">উজ্জ্বলতা</sys:String>
+    <sys:String x:Key="str_Contrast">কনট্রাস্ট</sys:String>
+    <sys:String x:Key="str_Saturation">স্যাচুরেশন</sys:String>
+    <sys:String x:Key="str_Gamma">গামা</sys:String>
+    <sys:String x:Key="str_Hue">বর্ণ</sys:String>
+    <sys:String x:Key="str_ResetAll">সব রিসেট করুন</sys:String>
+    <sys:String x:Key="str_SubtitleSettings">সাবটাইটেল সেটিংস</sys:String>
+    <sys:String x:Key="str_FontSize">ফন্ট আকার</sys:String>
+    <sys:String x:Key="str_Font">ফন্ট</sys:String>
+    <sys:String x:Key="str_TextColor">টেক্সট রং</sys:String>
+    <sys:String x:Key="str_Outline">আউটলাইন</sys:String>
+    <sys:String x:Key="str_Background">পটভূমি</sys:String>
+    <sys:String x:Key="str_SubtitleStyleNote">আপনি পরবর্তী যে ফাইল খুলবেন তাতে প্রযোজ্য।</sys:String>
+    <!-- TODO: translate -->
+    <sys:String x:Key="str_PlaybackRate">Playback Rate</sys:String>
+    <sys:String x:Key="str_AudioTrack">Audio Track</sys:String>
+    <sys:String x:Key="str_SubtitleTrack">Subtitle Track</sys:String>
+    <sys:String x:Key="str_AlwaysOnTop">Always on Top</sys:String>
+    <sys:String x:Key="str_HardwareAcceleration">Hardware Acceleration</sys:String>
+    <sys:String x:Key="str_ViewInfo">View Info</sys:String>
+    <sys:String x:Key="str_Settings">Settings</sys:String>
+    <sys:String x:Key="str_RecentFiles">Recent Files</sys:String>
 </ResourceDictionary>
+
