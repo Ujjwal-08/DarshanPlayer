@@ -8,8 +8,13 @@ namespace DarshanPlayer.Services
 {
     public class UpdateService
     {
-        // Replace with your actual GitHub repo URL before shipping
         private const string RepoUrl = "https://github.com/Ujjwal-08/DarshanPlayer";
+
+        /// <summary>
+        /// Human-facing download page, for the title-bar "check for updates" button. Kept next to
+        /// <see cref="RepoUrl"/> so the in-app updater and the manual link can never drift apart.
+        /// </summary>
+        public const string ReleasesPageUrl = RepoUrl + "/releases/latest";
 
         private UpdateManager? _mgr;
         private UpdateInfo? _pendingUpdate;

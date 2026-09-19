@@ -58,3 +58,17 @@ Generated\ Files/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Release build artifacts
+/publish/
+/Releases/
+/Releases-stale-*/
+/Installer/
+/.vlctool/
+*.msi
+
+# Local tooling and scratch output
+/.dotnet/
+build.log
+debug.txt
+*Zone.Identifier

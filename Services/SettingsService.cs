@@ -17,12 +17,32 @@ namespace DarshanPlayer.Services
     /// </summary>
     public class SettingsService
     {
-        private static readonly string SettingsDir = Path.Combine(
+        /// <summary>Default location: <c>%AppData%\DarshanPlayer</c>.</summary>
+        public static string DefaultDirectory { get; } = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "DarshanPlayer");
-        private static readonly string SettingsPath = Path.Combine(SettingsDir, "settings.json");
-        private static readonly string TempPath = SettingsPath + ".tmp";
-        private static readonly string BackupPath = SettingsPath + ".bak";
+
+        // Instance paths rather than statics so tests can point the service at a temp directory
+        // instead of the user's real settings file (checklist: Phase 24 mockability).
+        private readonly string SettingsDir;
+        private readonly string SettingsPath;
+        private readonly string TempPath;
+        private readonly string BackupPath;
+
+        /// <param name="settingsDirectory">
+        /// Where settings.json lives. Null uses <see cref="DefaultDirectory"/>; tests pass a temp
+        /// directory so they never read or overwrite the real user configuration.
+        /// </param>
+        public SettingsService(string? settingsDirectory = null)
+        {
+            SettingsDir = settingsDirectory ?? DefaultDirectory;
+            SettingsPath = Path.Combine(SettingsDir, "settings.json");
+            TempPath = SettingsPath + ".tmp";
+            BackupPath = SettingsPath + ".bak";
+        }
+
+        /// <summary>Full path of the file this instance reads and writes.</summary>
+        public string FilePath => SettingsPath;
 
         private static readonly JsonSerializerOptions JsonOpts = new()
         {

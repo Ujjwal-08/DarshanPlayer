@@ -45,18 +45,38 @@ namespace DarshanPlayer.Models
             }
         }
 
-        /// <summary>Human-readable duration string for the playlist column (e.g. "3:42" or "1:02:15").</summary>
-        public string Duration { get; set; } = "--:--";
+        /// <summary>
+        /// Human-readable duration for the playlist column (e.g. "3:42" or "1:02:15"), or a
+        /// placeholder until metadata extraction has run. Derived from
+        /// <see cref="DurationTimeSpan"/> so the column updates as soon as the duration lands —
+        /// as a plain auto-property it could never refresh the binding.
+        /// </summary>
+        public string Duration => FormatDuration(_durationTimeSpan);
 
-        /// <summary>Structured duration; populated by metadata extraction (future feature 13.6).</summary>
+        /// <summary>Structured duration; populated by metadata extraction.</summary>
         public TimeSpan DurationTimeSpan
         {
             get => _durationTimeSpan;
             set
             {
+                if (_durationTimeSpan == value) return;
                 _durationTimeSpan = value;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(Duration));
             }
+        }
+
+        /// <summary>
+        /// Formats a duration the way media players do: "3:42" under an hour, "1:02:15" above it,
+        /// and a placeholder when the length isn't known yet.
+        /// </summary>
+        public static string FormatDuration(TimeSpan value)
+        {
+            if (value <= TimeSpan.Zero) return "--:--";
+
+            return value.TotalHours >= 1
+                ? $"{(int)value.TotalHours}:{value.Minutes:D2}:{value.Seconds:D2}"
+                : $"{value.Minutes}:{value.Seconds:D2}";
         }
 
         /// <summary>Artist tag from the media file (TagLib# or LibVLC). Null when unknown.</summary>

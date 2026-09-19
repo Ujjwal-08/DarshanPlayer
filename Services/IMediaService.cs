@@ -49,6 +49,25 @@ namespace DarshanPlayer.Services
         float Hue { get; set; }          // -180 – 180 (degrees)
         /// <summary>Re-push all current adjustment values to the player (call after media (re)loads).</summary>
         void ApplyVideoAdjustments();
+
+        // ─── Video geometry (Phases 12.3, 12.5, 12.6) ────────────────────
+        /// <summary>Crop geometry such as "16:9", or null for no cropping.</summary>
+        string? CropGeometry { get; set; }
+        /// <summary>Deinterlace mode name, or null/empty to disable.</summary>
+        string? DeinterlaceMode { get; set; }
+
+        // ─── Audio (Phases 11.3, 11.4, 11.5) ─────────────────────────────
+        /// <summary>Apply a 10-band equalizer curve. Null clears it.</summary>
+        void SetEqualizer(EqualizerProfile? profile);
+        /// <summary>Even out loud/quiet passages via LibVLC's compressor filter.</summary>
+        bool AudioNormalization { get; set; }
+        /// <summary>Stereo / mono / reversed-stereo / left / right downmix.</summary>
+        AudioChannelMode AudioChannel { get; set; }
+
+        // ─── Chapters (Phase 9.4) ────────────────────────────────────────
+        IReadOnlyList<ChapterInfo> Chapters { get; }
+        int CurrentChapter { get; set; }
+        void RefreshChapters();
         /// <summary>Reload current file with updated subtitle style options, then seek back to saved position.</summary>
         void ReloadSubtitleSettings(AppSettings settings);
         /// <summary>Recreate LibVLC instance with new freetype args so subtitle style takes effect immediately.</summary>

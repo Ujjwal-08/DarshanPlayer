@@ -9,7 +9,7 @@
 
 **Darshan Player** is a fast, open-source desktop media player for Windows built with C# and WPF. Designed for Indian audiences — smooth playback of local videos, Hindi/regional audio tracks, and subtitle auto-loading out of the box.
 
-> **[Download v1.1.0 →](https://github.com/Ujjwal-08/DarshanPlayer/releases/latest)**
+> **[Download v1.2.0 →](https://github.com/Ujjwal-08/DarshanPlayer/releases/latest)**
 
 ---
 
@@ -63,16 +63,20 @@
 - Zoom / video scale (portrait reels, 9:16 content)
 - Session restore — resumes last position on relaunch
 
-### System Integration
-- File associations: right-click any video/audio → "Play with Darshan Player"
-- Windows Default Programs registration
-- Auto-start with Windows (optional, unchecked by default)
-- Desktop shortcut (optional, unchecked by default)
+### Windows Integration
+- Appears in **Open with** for every supported video and audio format
+- Listed in **Settings ▸ Apps ▸ Default apps** — pick Darshan Player as your default there, or use *Set as default player…* in the app (Windows always asks you to confirm; the app never changes your defaults on its own)
+- **Add to Darshan Player playlist** on media files, **Play with Darshan Player** on folders (under *Show more options* on Windows 11)
+- Start Menu and Desktop shortcuts, and `Win+R` → `DarshanPlayer`
+- Recent files in the taskbar and Start Menu jump list
+- One window: files opened from Explorer go to the running player — select several and the first plays while the rest queue (can be turned off in Settings)
+- Everything is per-user (no admin prompt) and removed cleanly on uninstall, without touching other players' registrations
 
 ### Auto-Update
 - Silent background updates via **Velopack** (v1.1.0 onward)
-- No SmartScreen prompt on update — updates download via HTTPS in-app, no browser involved
+- In-app updates download over HTTPS with no browser and no SmartScreen prompt (the first install of an unsigned build can still show one)
 - Notification shown when update is ready; applies on next restart
+- Download icon in the title bar opens the releases page for a manual update
 
 ---
 
@@ -86,9 +90,9 @@
 
 ### Option 1 — Installer (Recommended)
 
-1. Download `DarshanPlayer-Setup.exe` from [Releases](https://github.com/Ujjwal-08/DarshanPlayer/releases/latest)
-2. Run the installer
-3. Choose optional tasks (desktop shortcut, right-click menu, auto-start)
+1. Download `DarshanPlayer-win-Setup.exe` from [Releases](https://github.com/Ujjwal-08/DarshanPlayer/releases/latest)
+2. Run it — no admin rights needed; it installs for your user and launches the player
+3. Optional: choose *Set as default player…* in the menu to open Windows Default apps
 
 **System requirements:** Windows 10 (1903+) or Windows 11, 64-bit
 
@@ -102,25 +106,51 @@ Download the `.zip` from Releases, extract, run `DarshanPlayer.exe` directly.
 
 ## Keyboard Shortcuts
 
+**Playback**
+
 | Key | Action |
 |-----|--------|
 | Space | Play / Pause |
-| F | Toggle fullscreen |
-| M | Mute |
-| ↑ / ↓ | Volume up / down |
-| ← / → | Seek backward / forward |
-| `]` / `[` | Speed up / slow down |
-| `\` | Reset speed to 1× |
-| R | Cycle repeat (None → One → All) |
-| Ctrl+S | Toggle shuffle |
-| , | Previous frame (paused) |
-| . | Next frame (paused) |
-| N | Next track |
-| P | Previous track |
 | S | Stop |
+| ← / → | Seek backward / forward |
+| `,` / `.` | Previous / next frame (paused) |
+| `[` / `]` | Slow down / speed up |
+| `\` | Reset speed to 1× |
+| N / P | Next / previous track |
+
+**Audio & subtitles**
+
+| Key | Action |
+|-----|--------|
+| ↑ / ↓ | Volume up / down |
+| M | Mute |
+| H / J | Subtitle delay −100ms / +100ms |
+| Ctrl+H | Reset subtitle delay |
+| Ctrl+E | Audio & equalizer panel |
+
+**View**
+
+| Key | Action |
+|-----|--------|
+| F / F11 | Toggle fullscreen |
+| Escape | Exit fullscreen |
+| Z | Cycle aspect ratio |
+| `+` / `-` | Zoom in / out |
+| `*` | Reset zoom to auto-fit |
+| I | Toggle media info |
+| Ctrl+L | Toggle playlist |
+
+**Playlist & loops**
+
+| Key | Action |
+|-----|--------|
+| R | Cycle repeat (None → One → All) |
+| Ctrl+← / Ctrl+→ | Previous / next chapter |
+| Ctrl+S | Toggle shuffle |
+| A / B | Set A-B loop start / end |
+| Ctrl+A | Clear A-B loop |
 | Ctrl+R | Set A-B loop point |
 | Ctrl+Shift+S | Take screenshot |
-| Escape | Exit fullscreen |
 
 ---
 

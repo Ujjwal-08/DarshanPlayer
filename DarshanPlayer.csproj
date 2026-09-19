@@ -9,7 +9,7 @@
     <UseWindowsForms>true</UseWindowsForms>
 
     <!-- Release Info & Metadata -->
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Authors>Ujjwal</Authors>
     <Company>Ujjwal</Company>
     <Product>Darshan Player</Product>
@@ -22,14 +22,23 @@
     <PublishSelfContained>true</PublishSelfContained>
     <PublishSingleFile>false</PublishSingleFile>
 
+    <!-- Startup performance: precompile IL to native so cold start skips most JIT -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <TieredCompilation>true</TieredCompilation>
+    <TieredPGO>true</TieredPGO>
+
     <!-- This will link the exe icon to an 'icon.ico' file in your project root once you add it -->
     <ApplicationIcon>icon.ico</ApplicationIcon>
-    <DefaultItemExcludes>$(DefaultItemExcludes);DarshanPlayer.Tests\**</DefaultItemExcludes>
+    <!-- Build artifacts and vendored tooling must never be globbed as project content.
+         publish\ in particular carries a libvlc\ tree that MSBuild would otherwise link
+         into OutDir, breaking any project that references this one. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);DarshanPlayer.Tests\**;publish\**;Releases\**;.dotnet\**;.vlctool\**</DefaultItemExcludes>
     <!-- Velopack requires an explicit Main so WPF's auto-generated one is suppressed -->
     <StartupObject>DarshanPlayer.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <Using Remove="System.Windows.Forms" />
     <PackageReference Include="MahApps.Metro.IconPacks.Material" Version="6.2.1" />
     <Resource Include="icon.ico" />

@@ -3,6 +3,7 @@ using LibVLCSharp.Shared;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 
 namespace DarshanPlayer.Services
@@ -107,8 +108,16 @@ namespace DarshanPlayer.Services
             };
             MediaPlayer.Paused += (_, _) => Paused?.Invoke(this, EventArgs.Empty);
             MediaPlayer.Stopped += (_, _) => Stopped?.Invoke(this, EventArgs.Empty);
-            MediaPlayer.EndReached += (_, _) => EndReached?.Invoke(this, EventArgs.Empty);
-            MediaPlayer.EncounteredError += (_, _) => EncounteredError?.Invoke(this, EventArgs.Empty);
+            MediaPlayer.EndReached += (_, _) =>
+            {
+                Log.Debug_("Playback", "End reached: {File}", _currentFilePath);
+                EndReached?.Invoke(this, EventArgs.Empty);
+            };
+            MediaPlayer.EncounteredError += (_, _) =>
+            {
+                Log.Error("Playback", null, "LibVLC reported an error on {File}", _currentFilePath);
+                EncounteredError?.Invoke(this, EventArgs.Empty);
+            };
             MediaPlayer.LengthChanged += (_, e) => LengthChanged?.Invoke(this, e);
         }
 
@@ -197,6 +206,11 @@ namespace DarshanPlayer.Services
                 media.AddOption(":avcodec-hw=any");
                 media.AddOption(":d3d11va-hw-decoding");
             }
+            ApplyPerMediaOptions(media);
+
+            Log.Info("Playback", "Opening {File} (hwaccel={Hw}, crop={Crop}, deinterlace={Deint}, normalize={Norm})",
+                Path.GetFileName(path), settings?.EnableHardwareAcceleration ?? false,
+                _cropGeometry ?? "off", _deinterlaceMode ?? "off", _audioNormalization);
 
             // Subtitle appearance (Phase 10.3). These freetype-* options are applied per-media, so
             // changing them takes effect on the next opened file. Invalid options are ignored by VLC.
@@ -324,6 +338,159 @@ namespace DarshanPlayer.Services
         {
             get => MediaPlayer.AudioDelay / 1000; // µs → ms
             set => MediaPlayer.SetAudioDelay(value * 1000); // ms → µs
+        }
+
+        // ─── Video geometry (Phases 12.3, 12.5, 12.6) ────────────────────
+        // Values are cached locally and re-pushed from ApplyVideoAdjustments() so they survive the
+        // MediaPlayer being recreated (RecreateWithSubtitleSettings) or new media being loaded.
+
+        private string? _cropGeometry;
+        public string? CropGeometry
+        {
+            get => _cropGeometry;
+            set
+            {
+                _cropGeometry = string.IsNullOrWhiteSpace(value) ? null : value;
+                TryApply("CropGeometry", () => MediaPlayer.CropGeometry = _cropGeometry);
+            }
+        }
+
+        private string? _deinterlaceMode;
+        public string? DeinterlaceMode
+        {
+            get => _deinterlaceMode;
+            set
+            {
+                _deinterlaceMode = string.IsNullOrWhiteSpace(value) || value == "Off" ? null : value;
+                // Passing an empty mode is how LibVLC is told to detach the filter.
+                TryApply("Deinterlace", () =>
+                    MediaPlayer.SetDeinterlace(_deinterlaceMode?.ToLowerInvariant() ?? string.Empty));
+            }
+        }
+
+        // ─── Audio (Phases 11.3, 11.4, 11.5) ─────────────────────────────
+
+        private Equalizer? _equalizer;
+        public void SetEqualizer(EqualizerProfile? profile)
+        {
+            TryApply("Equalizer", () =>
+            {
+                if (profile == null || profile.IsFlat)
+                {
+                    MediaPlayer.UnsetEqualizer();
+                    _equalizer?.Dispose();
+                    _equalizer = null;
+                    return;
+                }
+
+                var normalized = profile.Normalized();
+                var eq = new Equalizer();
+                eq.SetPreamp(normalized.PreAmp);
+                for (uint i = 0; i < EqualizerProfile.BandCount; i++)
+                    eq.SetAmp(normalized.Bands[i], i);
+
+                MediaPlayer.SetEqualizer(eq);
+
+                // Dispose only after the new one is attached — freeing the live filter first can
+                // leave the audio chain pointing at released native memory.
+                _equalizer?.Dispose();
+                _equalizer = eq;
+            });
+        }
+
+        private bool _audioNormalization;
+        public bool AudioNormalization
+        {
+            get => _audioNormalization;
+            set
+            {
+                if (_audioNormalization == value) return;
+                _audioNormalization = value;
+                // The compressor filter is an instance-level option, so it only takes effect for
+                // media opened afterwards. Surfaced in the UI as applying to the next file.
+                Debug.WriteLine($"[MediaService] AudioNormalization={value} (applies to next media)");
+            }
+        }
+
+        private AudioChannelMode _audioChannel = AudioChannelMode.Stereo;
+        public AudioChannelMode AudioChannel
+        {
+            get => _audioChannel;
+            set
+            {
+                _audioChannel = value;
+                TryApply("AudioChannel", () => MediaPlayer.SetChannel((AudioOutputChannel)(int)value));
+            }
+        }
+
+        // ─── Chapters (Phase 9.4) ────────────────────────────────────────
+
+        private List<ChapterInfo> _chapters = new();
+        public IReadOnlyList<ChapterInfo> Chapters => _chapters;
+
+        public int CurrentChapter
+        {
+            get => MediaPlayer.Chapter;
+            set
+            {
+                if (_chapters.Count == 0) return;
+                MediaPlayer.Chapter = Math.Clamp(value, 0, _chapters.Count - 1);
+            }
+        }
+
+        public void RefreshChapters()
+        {
+            var list = new List<ChapterInfo>();
+            try
+            {
+                // Chapter 0 of title -1 = the chapters of the current title.
+                var descriptions = MediaPlayer.FullChapterDescriptions(-1);
+                if (descriptions != null)
+                {
+                    for (int i = 0; i < descriptions.Length; i++)
+                    {
+                        var d = descriptions[i];
+                        list.Add(new ChapterInfo
+                        {
+                            Index = i,
+                            Title = d.Name ?? string.Empty,
+                            StartMs = d.TimeOffset,
+                            DurationMs = d.Duration,
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Most files have no chapters at all; that is not an error worth surfacing.
+                Debug.WriteLine($"[MediaService] Chapter enumeration failed: {ex.Message}");
+            }
+
+            _chapters = list;
+        }
+
+        /// <summary>
+        /// Options that must be attached per-media rather than set at runtime.
+        /// </summary>
+        private void ApplyPerMediaOptions(Media media)
+        {
+            if (_audioNormalization)
+                media.AddOption(":audio-filter=compressor");
+        }
+
+        /// <summary>
+        /// Run a native call that is only valid once a media player has output attached. These
+        /// throw or crash if invoked too early, and every one of them is a cosmetic setting —
+        /// never worth taking the app down for.
+        /// </summary>
+        private void TryApply(string what, Action action)
+        {
+            try { action(); }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MediaService] {what} failed: {ex.Message}");
+                Log.Warn("MediaService", "{Setting} could not be applied: {Reason}", what, ex.Message);
+            }
         }
 
         // ─── Video Adjustments (Phase 12.1) ──────────────────────────────

@@ -151,6 +151,12 @@ namespace DarshanPlayer.Services
             else if (RepeatMode == RepeatMode.All) PlayAt(Items.Count - 1);
         }
 
+        /// <summary>Path of the playlist auto-saved on exit and restored on next launch.</summary>
+        public static string SessionPlaylistPath { get; } = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "DarshanPlayer",
+            "session.m3u8");
+
         public void SaveM3U(string path)
         {
             var lines = new List<string> { "#EXTM3U" };
@@ -159,12 +165,62 @@ namespace DarshanPlayer.Services
             File.WriteAllLines(path, lines, Encoding.UTF8);
         }
 
-        public void LoadM3U(string path)
+        /// <param name="skipMissing">
+        /// Drop entries whose file no longer exists. Used when restoring the previous session, where
+        /// silently carrying over dead paths from removable drives would be worse than losing them.
+        /// </param>
+        public void LoadM3U(string path, bool skipMissing = false)
         {
             foreach (var line in File.ReadLines(path, Encoding.UTF8))
             {
                 if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#')) continue;
-                Add(line.Trim());
+                var entry = line.Trim();
+                if (skipMissing && !File.Exists(entry)) continue;
+                Add(entry);
+            }
+        }
+
+        /// <summary>
+        /// Write the current playlist to <see cref="SessionPlaylistPath"/>, or delete that file when
+        /// the playlist is empty so the next launch starts clean. Never throws: a failure to persist
+        /// the playlist must not be able to block application shutdown.
+        /// </summary>
+        public void SaveSession()
+        {
+            try
+            {
+                if (Items.Count == 0)
+                {
+                    if (File.Exists(SessionPlaylistPath)) File.Delete(SessionPlaylistPath);
+                    return;
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(SessionPlaylistPath)!);
+                SaveM3U(SessionPlaylistPath);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PlaylistService] SaveSession failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Restore the playlist saved by <see cref="SaveSession"/>. Never throws.
+        /// </summary>
+        /// <returns>Number of items restored.</returns>
+        public int RestoreSession()
+        {
+            try
+            {
+                if (!File.Exists(SessionPlaylistPath)) return 0;
+                var before = Items.Count;
+                LoadM3U(SessionPlaylistPath, skipMissing: true);
+                return Items.Count - before;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PlaylistService] RestoreSession failed: {ex.Message}");
+                return 0;
             }
         }
 

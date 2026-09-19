@@ -10,6 +10,7 @@
         Title="Darshan Player"
         Icon="icon.ico"
         Width="1100" Height="700"
+        MinWidth="780" MinHeight="520"
         WindowStyle="None"
         AllowsTransparency="False"
         Background="#111111"
@@ -27,7 +28,7 @@
         <shell:WindowChrome CaptionHeight="40"
                             GlassFrameThickness="0"
                             CornerRadius="0"
-                            ResizeBorderThickness="4"/>
+                            ResizeBorderThickness="8"/>
     </shell:WindowChrome.WindowChrome>
 
     <Window.TaskbarItemInfo>
@@ -94,10 +95,22 @@
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="{DynamicResource str_VideoAdjustments}" Command="{Binding ToggleVideoAdjustCommand}"/>
+                <MenuItem Header="Audio &amp; Equalizer" Command="{Binding ToggleAudioPanelCommand}" InputGestureText="Ctrl+E"/>
                 <MenuItem Header="{DynamicResource str_SubtitleSettings}" Command="{Binding ToggleSubtitleStyleCommand}"/>
+                <MenuItem Header="Chapters" ItemsSource="{Binding Chapters}" IsEnabled="{Binding HasChapters}">
+                    <MenuItem.ItemContainerStyle>
+                        <Style TargetType="MenuItem">
+                            <Setter Property="Header" Value="{Binding DisplayLabel}"/>
+                            <Setter Property="Command" Value="{Binding DataContext.GoToChapterCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                            <Setter Property="CommandParameter" Value="{Binding}"/>
+                        </Style>
+                    </MenuItem.ItemContainerStyle>
+                </MenuItem>
                 <Separator/>
                 <MenuItem Header="{DynamicResource str_AlwaysOnTop}" IsCheckable="True" IsChecked="{Binding AlwaysOnTop}"/>
                 <MenuItem Header="{DynamicResource str_HardwareAcceleration}" IsCheckable="True" IsChecked="{Binding EnableHardwareAcceleration}"/>
+                <MenuItem Header="Set as default player..." Command="{Binding SetAsDefaultPlayerCommand}"
+                          ToolTip="Opens Windows Default apps, where you can choose Darshan Player for your media files"/>
                 <MenuItem Header="{DynamicResource str_ViewInfo}" Command="{Binding ToggleMetadataCommand}"/>
                 <Separator/>
                 <MenuItem Header="{DynamicResource str_Language}">
@@ -207,6 +220,11 @@
                     </Button>
                     <Button Style="{StaticResource IconBtn}" Click="BtnSupportPaypal_Click" ToolTip="Support via PayPal" shell:WindowChrome.IsHitTestVisibleInChrome="True" Background="Transparent">
                         <iconPacks:PackIconMaterial Kind="CurrencyUsd" Width="14" Height="14"/>
+                    </Button>
+                    <Button Style="{StaticResource IconBtn}" Click="BtnCheckUpdates_Click"
+                            ToolTip="Check for updates &#x2014; opens the download page"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True" Background="Transparent">
+                        <iconPacks:PackIconMaterial Kind="Download" Width="14" Height="14"/>
                     </Button>
                     <Separator Width="1" Height="20" Margin="4,0" Background="#33FFFFFF"/>
                     
@@ -391,10 +409,135 @@
                                         <TextBlock Grid.Column="2" Text="{Binding HueLabel}" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="12"/>
                                     </Grid>
 
+                                    <Separator Background="{StaticResource BorderBrush}" Margin="0,12,0,10"/>
+                                    <TextBlock Text="Geometry" FontWeight="SemiBold" FontSize="12"
+                                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+
+                                    <Grid Margin="0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="90"/><ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Aspect" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                        <ComboBox Grid.Column="1" Style="{StaticResource DarkCombo}" ItemsSource="{Binding AspectRatiosList}"
+                                                  SelectedItem="{Binding SelectedAspectRatio, Mode=TwoWay}"/>
+                                    </Grid>
+
+                                    <Grid Margin="0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="90"/><ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Crop" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                        <ComboBox Grid.Column="1" Style="{StaticResource DarkCombo}" ItemsSource="{Binding CropModesList}"
+                                                  SelectedItem="{Binding SelectedCrop, Mode=TwoWay}"/>
+                                    </Grid>
+
+                                    <Grid Margin="0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="90"/><ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Deinterlace" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                        <ComboBox Grid.Column="1" Style="{StaticResource DarkCombo}" ItemsSource="{Binding DeinterlaceModesList}"
+                                                  SelectedItem="{Binding SelectedDeinterlace, Mode=TwoWay}"/>
+                                    </Grid>
+
                                     <Button Command="{Binding ResetVideoAdjustmentsCommand}" Style="{StaticResource TextBtn}"
                                             HorizontalAlignment="Right" Margin="0,12,0,0" Padding="14,6" Background="{StaticResource BgHoverBrush}">
                                         <TextBlock Text="{DynamicResource str_ResetAll}" Foreground="{StaticResource TextPrimaryBrush}"/>
                                     </Button>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+
+                        <!-- AUDIO & EQUALIZER PANEL (Phases 11.3, 11.4, 11.5) -->
+                        <Popup x:Name="AudioPanelPopup" IsOpen="{Binding IsAudioPanelVisible, Mode=TwoWay}"
+                               Placement="Center" AllowsTransparency="True" PopupAnimation="Fade" StaysOpen="True">
+                            <Border Background="{StaticResource BgCardBrush}" CornerRadius="12" Padding="20"
+                                    BorderBrush="{StaticResource AccentGlowBrush}" BorderThickness="1" Width="520">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="30" Opacity="0.6" ShadowDepth="0"/>
+                                </Border.Effect>
+                                <StackPanel>
+                                    <DockPanel LastChildFill="False" Margin="0,0,0,8">
+                                        <TextBlock Text="Audio" FontWeight="Bold" FontSize="16" DockPanel.Dock="Left"/>
+                                        <Button Command="{Binding ToggleAudioPanelCommand}" Style="{StaticResource IconBtn}" DockPanel.Dock="Right" Width="28" Height="28">
+                                            <iconPacks:PackIconMaterial Kind="Close" Width="14" Height="14"/>
+                                        </Button>
+                                    </DockPanel>
+                                    <Separator Background="{StaticResource BorderBrush}" Margin="0,0,0,12"/>
+
+                                    <!-- Equalizer header: enable + preset -->
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox Grid.Column="0" Content="Equalizer" VerticalAlignment="Center" Margin="0,0,12,0"
+                                                  Foreground="{StaticResource TextPrimaryBrush}"
+                                                  IsChecked="{Binding EqualizerEnabled, Mode=TwoWay}"/>
+                                        <ComboBox Grid.Column="1" Style="{StaticResource DarkCombo}" ItemsSource="{Binding EqualizerPresetNamesList}"
+                                                  SelectedItem="{Binding SelectedEqualizerPreset, Mode=TwoWay}"
+                                                  IsEnabled="{Binding EqualizerEnabled}"/>
+                                        <Button Grid.Column="2" Command="{Binding ResetEqualizerCommand}" Style="{StaticResource TextBtn}"
+                                                Margin="10,0,0,0" Padding="10,4" Background="{StaticResource BgHoverBrush}">
+                                            <TextBlock Text="Flat" Foreground="{StaticResource TextPrimaryBrush}" FontSize="11"/>
+                                        </Button>
+                                    </Grid>
+
+                                    <!-- Ten band sliders + preamp -->
+                                    <Border Background="{StaticResource BgPanelBrush}" CornerRadius="8" Padding="12,10"
+                                            IsEnabled="{Binding EqualizerEnabled}">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <StackPanel Margin="0,0,14,0">
+                                                <Slider Orientation="Vertical" Height="120" HorizontalAlignment="Center"
+                                                        Minimum="-20" Maximum="20"
+                                                        Value="{Binding EqualizerPreAmp, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                <TextBlock Text="Pre" HorizontalAlignment="Center" Margin="0,6,0,0"
+                                                           FontSize="10" Foreground="{StaticResource AccentLightBrush}"/>
+                                            </StackPanel>
+
+                                            <ItemsControl ItemsSource="{Binding EqualizerBands}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Margin="5,0" ToolTip="{Binding GainLabel}">
+                                                            <Slider Orientation="Vertical" Height="120" HorizontalAlignment="Center"
+                                                                    Minimum="-20" Maximum="20"
+                                                                    Value="{Binding Gain, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                            <TextBlock Text="{Binding FrequencyLabel}" HorizontalAlignment="Center"
+                                                                       Margin="0,6,0,0" FontSize="10"
+                                                                       Foreground="{StaticResource TextMutedBrush}"/>
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Separator Background="{StaticResource BorderBrush}" Margin="0,14,0,10"/>
+
+                                    <CheckBox Content="Volume levelling (even out loud and quiet scenes)"
+                                              Foreground="{StaticResource TextPrimaryBrush}" FontSize="12" Margin="0,0,0,10"
+                                              IsChecked="{Binding AudioNormalization, Mode=TwoWay}"/>
+
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="90"/><ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Output" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                        <ComboBox Grid.Column="1" Style="{StaticResource DarkCombo}" ItemsSource="{Binding AudioChannelModesList}"
+                                                  SelectedItem="{Binding AudioChannel, Mode=TwoWay}"/>
+                                    </Grid>
+
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="60"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="A/V sync" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                        <Slider Grid.Column="1" Style="{StaticResource VolumeSlider}" Minimum="-2000" Maximum="2000" VerticalAlignment="Center"
+                                                Value="{Binding AudioDelay, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding AudioDelayLabel}" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="12"/>
+                                    </Grid>
                                 </StackPanel>
                             </Border>
                         </Popup>
@@ -422,7 +565,7 @@
                                             <ColumnDefinition Width="90"/><ColumnDefinition Width="*"/><ColumnDefinition Width="46"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="{DynamicResource str_FontSize}" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
-                                        <Slider Grid.Column="1" Style="{StaticResource VolumeSlider}" Minimum="0" Maximum="48" VerticalAlignment="Center"
+                                        <Slider Grid.Column="1" Style="{StaticResource VolumeSlider}" Minimum="0" Maximum="60" VerticalAlignment="Center"
                                                 IsSnapToTickEnabled="True" TickFrequency="1"
                                                 Value="{Binding SubtitleFontSize, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                         <TextBlock Grid.Column="2" Text="{Binding SubtitleFontSizeLabel}" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="12"/>
@@ -640,7 +783,10 @@
                     </Popup>
                 </Grid>
 
-                <Grid Grid.Row="1">
+                <!-- Horizontal scroll guarantees no control is ever hidden behind another when the
+                     window is narrow: overflow becomes a scrollbar instead of overlapping panels. -->
+                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <Grid MinWidth="740">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>   <!-- Playback & Time -->
                         <ColumnDefinition Width="Auto"/> <!-- Center Title -->
@@ -746,6 +892,7 @@
                         </Button>
                     </StackPanel>
                 </Grid>
+                </ScrollViewer>
             </Grid>
         </Border>
 

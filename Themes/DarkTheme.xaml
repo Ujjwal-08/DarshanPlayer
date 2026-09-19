@@ -312,6 +312,41 @@
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        <!-- Show the file's Title + duration instead of the object's ToString(). The accent dot
+             marks the track that's currently playing. -->
+        <Setter Property="ItemTemplate">
+            <Setter.Value>
+                <DataTemplate>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Ellipse Grid.Column="0" Width="6" Height="6" Margin="0,0,8,0" VerticalAlignment="Center"
+                                 Fill="{StaticResource AccentLightBrush}">
+                            <Ellipse.Style>
+                                <!-- DataTrigger instead of a converter: DarkTheme.xaml is merged before
+                                     BoolToVisConverter is defined in App.xaml, so StaticResource to it
+                                     fails to resolve here (StaticResourceHolder crash at load). -->
+                                <Style TargetType="Ellipse">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsCurrentlyPlaying}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Ellipse.Style>
+                        </Ellipse>
+                        <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis"
+                                   Foreground="{StaticResource TextPrimaryBrush}" FontSize="12" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" Text="{Binding Duration}" Margin="8,0,0,0"
+                                   Foreground="{StaticResource TextMutedBrush}" FontSize="11" VerticalAlignment="Center"/>
+                    </Grid>
+                </DataTemplate>
+            </Setter.Value>
+        </Setter>
         <Setter Property="ItemContainerStyle">
             <Setter.Value>
                 <Style TargetType="ListBoxItem">

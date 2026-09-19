@@ -179,6 +179,7 @@ namespace DarshanPlayer
             lang.Apply(settings.Current.Language);
 
             _vm.PropertyChanged += VmOnPropertyChanged;
+            _vm.AspectRatioNeedsFill += (_, _) => ApplyFillAspectRatio();
 
             _hideControlsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
             _hideControlsTimer.Tick += HideControlsTimer_Tick;
@@ -341,29 +342,83 @@ namespace DarshanPlayer
             this.Left = workArea.Left + (workArea.Width - this.Width) / 2;
             this.Top = workArea.Top + (workArea.Height - this.Height) / 2;
 
-            if (Application.Current.Properties["Args"] is string[] args && args.Length > 0)
+            // This launch's own request goes first, then anything other launches handed over while
+            // we were starting — so a multi-select open plays the first file and queues the rest.
+            var startupRequest = LaunchRequest.Parse(
+                Application.Current.Properties["Args"] as string[]);
+            Application.Current.Properties.Remove("Args");
+
+            Action beginAcceptingLaunches = () =>
             {
-                Application.Current.Properties.Remove("Args");
+                if (startupRequest.HasPaths) HandleLaunchRequest(startupRequest, bringToFront: false);
+                SingleInstance.SetHandler(r => Dispatcher.BeginInvoke(new Action(() => HandleLaunchRequest(r, bringToFront: true))));
+            };
 
-                Action playAction = () =>
-                {
-                    try { _vm.AddDroppedFiles(args); }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show("Could not open file:\n" + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
-                };
+            if (VideoPlayer.IsLoaded)
+                Dispatcher.InvokeAsync(beginAcceptingLaunches, DispatcherPriority.ContextIdle);
+            else
+                VideoPlayer.Loaded += (s, ev) => Dispatcher.InvokeAsync(beginAcceptingLaunches, DispatcherPriority.ContextIdle);
 
-                if (VideoPlayer.IsLoaded)
-                    Dispatcher.InvokeAsync(playAction, DispatcherPriority.ContextIdle);
-                else
-                    VideoPlayer.Loaded += (s, ev) => Dispatcher.InvokeAsync(playAction, DispatcherPriority.ContextIdle);
-            }
+            // Recent files feed the taskbar / Start Menu jump list.
+            _vm.RecentFiles.CollectionChanged += (_, _) => ScheduleJumpListUpdate();
+            ScheduleJumpListUpdate();
 
             ApplyPlaylistColumns();
         }
 
 
+
+        private readonly OpenBatchPolicy _openBatchPolicy = new();
+        private bool _jumpListUpdateQueued;
+
+        /// <summary>Open what another launch (or this one's command line) asked for.</summary>
+        private void HandleLaunchRequest(LaunchRequest request, bool bringToFront)
+        {
+            Log.Info("Shell", "Launch request: {Count} path(s), enqueue={Enqueue}", request.Paths.Count, request.Enqueue);
+
+            if (bringToFront) BringToFront();
+            if (!request.HasPaths) return;
+
+            try
+            {
+                _vm.OpenFromShell(request.Paths, enqueue: _openBatchPolicy.ShouldEnqueue(request));
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Shell", ex, "Could not open launch request");
+                MessageBox.Show("Could not open file:\n" + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        /// <summary>
+        /// Surface the window for a handed-over launch. Windows only lets a background process take
+        /// the foreground in limited cases; toggling Topmost is the dependable way for a player
+        /// that the user has just explicitly asked to open something.
+        /// </summary>
+        private void BringToFront()
+        {
+            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            Show();
+            Activate();
+            if (!Topmost)
+            {
+                Topmost = true;
+                Topmost = false;
+            }
+            Focus();
+        }
+
+        /// <summary>Coalesce the burst of change events RefreshRecentFiles produces into one update.</summary>
+        private void ScheduleJumpListUpdate()
+        {
+            if (_jumpListUpdateQueued) return;
+            _jumpListUpdateQueued = true;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                _jumpListUpdateQueued = false;
+                JumpListService.Update(_vm.RecentFiles.ToList());
+            }), DispatcherPriority.ApplicationIdle);
+        }
 
         private void Smtc_ButtonPressed(SystemMediaTransportControls sender, SystemMediaTransportControlsButtonPressedEventArgs args)
         {
@@ -406,9 +461,33 @@ namespace DarshanPlayer
             // Mouse Wake Handling
             else if (msg == WM_MOUSEMOVE || msg == WM_NCMOUSEMOVE)
             {
-                Dispatcher.BeginInvoke(new Action(WakeControls));
+                Dispatcher.BeginInvoke(new Action(WakeControlsFromPointer));
             }
             return IntPtr.Zero;
+        }
+
+        // How long the bar stays up while the pointer merely rests on it. Without this bound a
+        // motionless cursor parked over the bar kept IsCursorOverWindow true forever, so the bar
+        // never hid — the "sometimes it hides, sometimes it doesn't" behaviour depended purely on
+        // where the cursor happened to stop.
+        private static readonly TimeSpan HoverKeepAliveGrace = TimeSpan.FromSeconds(3);
+
+        private System.Drawing.Point _lastWakePointerPos;
+        private DateTime _lastPointerActivityUtc = DateTime.UtcNow;
+
+        /// <summary>
+        /// Wake path for pointer-sourced events. Ignores events where the physical cursor has not
+        /// actually moved, which is what showing a layered overlay under a still cursor produces.
+        /// </summary>
+        private void WakeControlsFromPointer()
+        {
+            var pos = System.Windows.Forms.Cursor.Position;
+            if (pos == _lastWakePointerPos)
+                return;
+
+            _lastWakePointerPos = pos;
+            _lastPointerActivityUtc = DateTime.UtcNow;
+            WakeControls();
         }
 
         private void WakeControls()
@@ -474,7 +553,17 @@ namespace DarshanPlayer
             {
                 Owner = this
             };
-            _fullscreenControlsWindow.ActivityDetected += (_, _) => Dispatcher.BeginInvoke(new Action(WakeControls));
+            _fullscreenControlsWindow.ActivityDetected += (_, _) => Dispatcher.BeginInvoke(new Action(WakeControlsFromPointer));
+
+            // The controls overlay is a separate top-level window, and showing it takes keyboard
+            // focus away from the main window — which silently killed every shortcut (including
+            // Escape and F) for as long as fullscreen was active. Route its key presses into the
+            // same handler so the shortcut set is identical in and out of fullscreen.
+            _fullscreenControlsWindow.PreviewKeyDown += (_, args) =>
+            {
+                if (HandleShortcut(args.Key, Keyboard.Modifiers))
+                    args.Handled = true;
+            };
         }
 
         private void HideFullscreenControlsWindow()
@@ -511,6 +600,9 @@ namespace DarshanPlayer
             var overlayHwnd = new WindowInteropHelper(_fullscreenControlsWindow).Handle;
             if (overlayHwnd != IntPtr.Zero)
             {
+                // SWP_NOACTIVATE is essential: without it, showing the overlay steals foreground
+                // and keyboard focus from the main window, and every keyboard shortcut stops
+                // working for as long as fullscreen lasts (Escape and F included).
                 SetWindowPos(
                     overlayHwnd,
                     HWND_TOPMOST,
@@ -518,7 +610,7 @@ namespace DarshanPlayer
                     0,
                     0,
                     0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_FRAMECHANGED | SWP_NOACTIVATE);
             }
         }
 
@@ -558,8 +650,13 @@ namespace DarshanPlayer
             {
                 if (_vm.IsPlaying)
                 {
-                    // Don't hide controls if the cursor is currently hovering over them — restart the timer instead
-                    if (_fullscreenControlsWindow != null && IsCursorOverWindow(_fullscreenControlsWindow))
+                    // Keep the bar up while the cursor is genuinely working over it (aiming at a
+                    // button), but only for a bounded grace period so a parked cursor can't latch
+                    // it on screen indefinitely.
+                    bool pointerRecentlyMoved = DateTime.UtcNow - _lastPointerActivityUtc < HoverKeepAliveGrace;
+                    if (pointerRecentlyMoved
+                        && _fullscreenControlsWindow != null
+                        && IsCursorOverWindow(_fullscreenControlsWindow))
                     {
                         _hideControlsTimer.Start();
                         return;
@@ -596,28 +693,32 @@ namespace DarshanPlayer
             }
 
         }
-        private void Window_MouseEnter(object sender, MouseEventArgs e) => WakeControls();
-        private void Root_MouseEnter(object sender, MouseEventArgs e) => WakeControls();
+        private void Window_MouseEnter(object sender, MouseEventArgs e) => WakeControlsFromPointer();
+        private void Root_MouseEnter(object sender, MouseEventArgs e) => WakeControlsFromPointer();
         
-        private void VideoArea_MouseEnter(object sender, MouseEventArgs e) => WakeControls();
+        private void VideoArea_MouseEnter(object sender, MouseEventArgs e) => WakeControlsFromPointer();
 
-        private void Root_MouseMove(object sender, MouseEventArgs e) => WakeControls();
+        private void Root_MouseMove(object sender, MouseEventArgs e) => WakeControlsFromPointer();
         private void Root_PreviewKeyDown(object sender, KeyEventArgs e) => WakeControls();
-        private void VideoArea_MouseMove(object sender, MouseEventArgs e) => WakeControls();
+        private void VideoArea_MouseMove(object sender, MouseEventArgs e) => WakeControlsFromPointer();
 
       
         
         private void OverlayEventGrid_MouseMove(object sender, MouseEventArgs e) 
         {
             // If we are moving inside the popup, keep it awake
-            WakeControls();
+            WakeControlsFromPointer();
         }
         
         private void OverlayEventGrid_Click(object sender, MouseButtonEventArgs e) => VideoArea_Click(sender, e);
         private void VmOnPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName == nameof(MainViewModel.IsFullscreen))
+            {
                 ApplyFullscreen(_vm.IsFullscreen);
+                // Fullscreen changes the host size, so a "Fill" ratio has to be recomputed.
+                Dispatcher.BeginInvoke(new Action(ApplyFillAspectRatio), DispatcherPriority.ApplicationIdle);
+            }
             else if (e.PropertyName == nameof(MainViewModel.IsPlaying))
             {
                 UpdateExecutionState(_vm.IsPlaying);
@@ -669,8 +770,14 @@ namespace DarshanPlayer
             }
         }
 
+        /// <summary>Compact snapshot of every window-state flag, for correlating transitions.</summary>
+        private string StateSnapshot() =>
+            $"fs={_vm.IsFullscreen} pip={_vm.IsPipMode} winState={WindowState} " +
+            $"topmost={Topmost} style={WindowStyle} playing={_vm.IsPlaying}";
+
         private void ApplyFullscreen(bool full)
         {
+            Log.Info("Window", "ApplyFullscreen({Full}) enter: {State}", full, StateSnapshot());
             _isApplyingFullscreenTransition = true;
 
             try
@@ -780,12 +887,14 @@ namespace DarshanPlayer
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     _isApplyingFullscreenTransition = false;
+                    Log.Info("Window", "ApplyFullscreen settled: {State}", StateSnapshot());
                 }), DispatcherPriority.ApplicationIdle);
             }
         }
         private void EnterPipMode()
         {
             if (_vm.IsPipMode) return;
+            Log.Info("Window", "EnterPipMode: {State}", StateSnapshot());
 
             _restoreWindowState = WindowState == WindowState.Minimized ? WindowState.Normal : WindowState;
             _preWidth = Width;
@@ -797,6 +906,10 @@ namespace DarshanPlayer
             _wasAlwaysOnTop = _vm.AlwaysOnTop;
 
             WindowState = WindowState.Normal;
+            // The window's normal MinWidth/MinHeight (780×520) would clamp the small PiP window and
+            // make it huge — drop the minimums while in PiP, restored in ExitPipMode.
+            MinWidth = 200;
+            MinHeight = 120;
             // A18: scale PiP to ~22% of work area so it looks proportional on all screen sizes/DPIs
             var wa = SystemParameters.WorkArea;
             Width  = Math.Max(320, wa.Width  * 0.22);
@@ -823,6 +936,10 @@ namespace DarshanPlayer
 
             _vm.IsPipMode = false;
             _vm.AlwaysOnTop = _wasAlwaysOnTop;
+
+            // Restore the normal-window minimums dropped in EnterPipMode.
+            MinWidth = 780;
+            MinHeight = 520;
 
             WindowState = WindowState.Normal;
 
@@ -913,7 +1030,7 @@ namespace DarshanPlayer
                     if (pos != _lastCursorPos)
                     {
                         _lastCursorPos = pos;
-                        WakeControls();
+                        WakeControlsFromPointer();
                     }
                 };
             }
@@ -941,7 +1058,10 @@ namespace DarshanPlayer
 
         private void ApplyPlaylistColumns()
         {
-            bool show = _vm.IsPlaylistVisible && !_vm.IsPipMode && !_vm.IsFullscreen;
+            // Fullscreen is deliberately NOT excluded here: the fullscreen control bar exposes
+            // TogglePlaylistCommand, and suppressing the column made that button a no-op.
+            // PiP stays excluded because the window is far too small to host the panel.
+            bool show = _vm.IsPlaylistVisible && !_vm.IsPipMode;
             var col1 = VideoPlaylistGrid.ColumnDefinitions[1]; // splitter
             var col2 = VideoPlaylistGrid.ColumnDefinitions[2]; // playlist
             if (show)
@@ -993,10 +1113,27 @@ namespace DarshanPlayer
                 : EXECUTION_STATE.ES_CONTINUOUS);
         }
 
+        /// <summary>
+        /// Push the video host's current width:height to LibVLC so the picture stretches to fill it.
+        /// LibVLC takes a ratio, not pixels, so DIP values are fine here. No-ops unless the user has
+        /// actually selected "Fill".
+        /// </summary>
+        private void ApplyFillAspectRatio()
+        {
+            if (_vm == null || _vm.SelectedAspectRatio != "Fill") return;
+
+            int w = (int)Math.Round(VideoPlayer.ActualWidth);
+            int h = (int)Math.Round(VideoPlayer.ActualHeight);
+            if (w <= 0 || h <= 0) return;
+
+            ServiceLocator.MediaService?.SetAspectRatio($"{w}:{h}");
+        }
+
         private void MainWindow_SizeChanged(object sender, SizeChangedEventArgs e)
         {
             UpdateFullscreenControlsWindowBounds();
             RefreshOverlayPopups();
+            ApplyFillAspectRatio();
 
             // Update the viewmodel so we don't destroy the WPF UI binding
             if (ActualWidth < 900 && _vm.IsPlaylistVisible)
@@ -1245,68 +1382,126 @@ namespace DarshanPlayer
 
         private void Window_KeyDown(object sender, KeyEventArgs e)
         {
-            switch (e.Key)
+            Log.Debug_("Input", "Window_KeyDown {Key}", e.Key);
+            // Don't hijack typing: when a text box (e.g. the playlist filter) has focus, let it
+            // receive the keystrokes instead of firing player shortcuts (Space=pause, S=stop, etc.).
+            if (Keyboard.FocusedElement is System.Windows.Controls.TextBox) return;
+
+            if (HandleShortcut(e.Key, Keyboard.Modifiers))
+                e.Handled = true;
+        }
+
+        /// <summary>
+        /// Every keyboard shortcut, in a form that does not depend on WPF holding focus.
+        ///
+        /// Clicking the video hands focus to LibVLC's native child HWND, after which WPF sees no
+        /// key events at all and every shortcut silently stopped working — including F and Escape
+        /// for leaving fullscreen. <see cref="VideoHost_MessageHook"/> now forwards key presses
+        /// here so the shortcut set behaves the same whichever window Windows considers focused.
+        /// </summary>
+        /// <returns>True when the key was consumed.</returns>
+        private bool HandleShortcut(Key key, ModifierKeys modifiers)
+        {
+            Log.Debug_("Input", "Shortcut {Key} (mods={Mods}) fs={Fs} pip={Pip}",
+                key, modifiers, _vm.IsFullscreen, _vm.IsPipMode);
+
+            bool handled = true;
+            switch (key)
             {
-                case Key.Space:  _vm.PlayPauseCommand.Execute(null);   e.Handled = true; break;
-                case Key.Left:   _vm.SkipBackCommand.Execute(null);    e.Handled = true; break;
-                case Key.Right:  _vm.SkipForwardCommand.Execute(null); e.Handled = true; break;
-                case Key.Up:     _vm.Volume = Math.Min(100, _vm.Volume + 5); e.Handled = true; break;
-                case Key.Down:   _vm.Volume = Math.Max(0,   _vm.Volume - 5); e.Handled = true; break;
-                case Key.M:      _vm.ToggleMuteCommand.Execute(null);  e.Handled = true; break;
-                case Key.I:      _vm.ToggleMetadataCommand.Execute(null); e.Handled = true; break;
+                // Escape used to live only in HwndHook, which is attached to the main window's
+                // HWND — so once LibVLC's child had focus there was no way to leave fullscreen
+                // from the keyboard at all, despite the README documenting it.
+                case Key.Escape:
+                    if (_vm.IsPipMode) ExitPipMode();
+                    else if (_vm.IsFullscreen) _vm.IsFullscreen = false;
+                    else handled = false;
+                    break;
+                case Key.Space:  _vm.PlayPauseCommand.Execute(null);   break;
+                case Key.Left:
+                    if (modifiers == ModifierKeys.Control) _vm.PreviousChapter();
+                    else _vm.SkipBackCommand.Execute(null);
+                    break;
+                case Key.Right:
+                    if (modifiers == ModifierKeys.Control) _vm.NextChapter();
+                    else _vm.SkipForwardCommand.Execute(null);
+                    break;
+                case Key.Up:     _vm.Volume = Math.Min(100, _vm.Volume + 5); break;
+                case Key.Down:   _vm.Volume = Math.Max(0,   _vm.Volume - 5); break;
+                case Key.M:      _vm.ToggleMuteCommand.Execute(null);  break;
+                case Key.I:      _vm.ToggleMetadataCommand.Execute(null); break;
                 case Key.F:
-                case Key.F11:    _vm.ToggleFullscreenCommand.Execute(null); e.Handled = true; break;
-                case Key.N:      _vm.NextTrackCommand.Execute(null);   e.Handled = true; break;
-                case Key.P:      _vm.PrevTrackCommand.Execute(null);   e.Handled = true; break;
+                case Key.F11:    _vm.ToggleFullscreenCommand.Execute(null); break;
+                case Key.N:      _vm.NextTrackCommand.Execute(null);   break;
+                case Key.P:      _vm.PrevTrackCommand.Execute(null);   break;
                 case Key.S:
-                    if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+                    if (modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
                         _vm.TakeScreenshotCommand.Execute(null);
-                    else if (Keyboard.Modifiers == ModifierKeys.Control)
+                    else if (modifiers == ModifierKeys.Control)
                         _vm.PlaylistVM?.ToggleShuffleCommand.Execute(null);
                     else
                         _vm.StopCommand.Execute(null);
-                    e.Handled = true; break;
-                case Key.OemPeriod: _vm.NextFrameCommand.Execute(null); e.Handled = true; break;
-                case Key.OemComma:  _vm.FrameBackCommand.Execute(null);  e.Handled = true; break;
-                case Key.G:      _vm.AdjustSubtitleDelayCommand.Execute("-50"); e.Handled = true; break;
-                case Key.H:      _vm.AdjustSubtitleDelayCommand.Execute("50");  e.Handled = true; break;
+                    break;
+                case Key.OemPeriod: _vm.NextFrameCommand.Execute(null); break;
+                case Key.OemComma:  _vm.FrameBackCommand.Execute(null);  break;
+                // Subtitle sync: H/J shift by 100ms, Ctrl+H resets. These were G/H +/-50ms, which
+                // matched neither the spec nor any other player; the old keys were undocumented.
+                case Key.H:
+                    if (modifiers == ModifierKeys.Control)
+                        _vm.SubtitleDelay = 0;
+                    else
+                        _vm.AdjustSubtitleDelayCommand.Execute("-100");
+                    break;
+                case Key.J:      _vm.AdjustSubtitleDelayCommand.Execute("100"); break;
                 case Key.R:
-                    if (Keyboard.Modifiers == ModifierKeys.Control)
+                    if (modifiers == ModifierKeys.Control)
                         _vm.SetABPointCommand.Execute(null);
                     else
                         _vm.PlaylistVM?.ToggleRepeatCommand.Execute(null);
-                    e.Handled = true; break;
+                    break;
                 case Key.A:
-                    if (Keyboard.Modifiers == ModifierKeys.Control)
+                    if (modifiers == ModifierKeys.Control)
                         _vm.ClearABRepeatCommand.Execute(null);
-                    else if (Keyboard.Modifiers == ModifierKeys.None)
+                    else if (modifiers == ModifierKeys.None)
                         _vm.SetAPointCommand.Execute(null);
-                    e.Handled = true; break;
-                case Key.B:      _vm.SetBPointCommand.Execute(null); e.Handled = true; break;
+                    break;
+                case Key.B:      _vm.SetBPointCommand.Execute(null); break;
                 case Key.OemCloseBrackets:
                     _vm.Rate = Math.Min(4.0f, (float)Math.Round(_vm.Rate + 0.25f, 2));
-                    e.Handled = true; break;
+                    break;
                 case Key.OemOpenBrackets:
                     _vm.Rate = Math.Max(0.25f, (float)Math.Round(_vm.Rate - 0.25f, 2));
-                    e.Handled = true; break;
+                    break;
                 case Key.OemPipe:
                     _vm.Rate = 1.0f;
-                    e.Handled = true; break;
+                    break;
                 case Key.OemPlus:
                 case Key.Add:
                     _vm.Zoom = Math.Clamp((float)Math.Round(_vm.Zoom + 0.25f, 2), 0.25f, 4.0f);
-                    e.Handled = true; break;
+                    break;
                 case Key.OemMinus:
                 case Key.Subtract:
                     _vm.Zoom = Math.Clamp((float)Math.Round(_vm.Zoom - 0.25f, 2), 0.25f, 4.0f);
-                    e.Handled = true; break;
+                    break;
                 case Key.Multiply:
                     _vm.Zoom = 0f; // reset to auto-fit
-                    e.Handled = true; break;
+                    break;
                 case Key.L:
-                    if (Keyboard.Modifiers == ModifierKeys.Control) { _vm.TogglePlaylistCommand.Execute(null); e.Handled = true; }
+                    if (modifiers == ModifierKeys.Control) _vm.TogglePlaylistCommand.Execute(null);
+                    else handled = false;
+                    break;
+                // The spec put aspect-ratio cycling on A, but A/Ctrl+A already drive the A-B loop
+                // and that shipped first. Z is free and adjacent to the other video-geometry keys.
+                case Key.Z:      _vm.CycleAspectRatioCommand.Execute(null); break;
+                case Key.E:
+                    if (modifiers == ModifierKeys.Control) _vm.EqualizerEnabled = !_vm.EqualizerEnabled;
+                    else handled = false;
+                    break;
+                default:
+                    handled = false;
                     break;
             }
+
+            return handled;
         }
 
         private void TryToggleFullscreenFromDoubleClick(MouseButtonEventArgs e, DependencyObject? source)
@@ -1346,8 +1541,11 @@ namespace DarshanPlayer
         private void SeekBar_PreviewMouseDown(object sender, MouseButtonEventArgs e)
         {
             if (e.ChangedButton != MouseButton.Left) return;
+            // NOTE: do NOT CaptureMouse() here. Capturing the mouse on the Slider element steals it
+            // from the internal Thumb, which kills drag-to-seek (only click-to-jump survives via
+            // IsMoveToPointEnabled). The fullscreen control bar works precisely because it doesn't
+            // capture — it just flags IsDraggingSeek and lets the Thumb drive the value.
             _vm.IsDraggingSeek = true;
-            (sender as Slider)?.CaptureMouse();
         }
 
         private void SeekBar_PreviewMouseUp(object sender, MouseButtonEventArgs e)
@@ -1356,10 +1554,9 @@ namespace DarshanPlayer
             if (_vm.IsDraggingSeek)
             {
                 _vm.IsDraggingSeek = false;
-                // Commit the seek based on the current slider value
+                // Commit the seek based on the final slider value
                 if (sender is Slider sl && _vm.Duration > 0)
-                    _vm.Position = sl.Value; // This triggers the real seek now that IsDraggingSeek=false
-                (sender as Slider)?.ReleaseMouseCapture();
+                    _vm.Position = sl.Value; // triggers the real seek now that IsDraggingSeek=false
             }
         }
 
@@ -1540,6 +1737,18 @@ namespace DarshanPlayer
         private void BtnSupportPaypal_Click(object sender, RoutedEventArgs e)
         {
             OpenUrl("https://www.paypal.com/ncp/payment/SECBQ62TRZZ6Y");
+        }
+
+        /// <summary>
+        /// Opens the releases page so users can fetch the newest build themselves.
+        /// Velopack still updates silently in the background; this is the manual escape hatch for
+        /// when that has not run yet, was blocked by a network policy, or the user simply wants to
+        /// see what changed before updating.
+        /// </summary>
+        private void BtnCheckUpdates_Click(object sender, RoutedEventArgs e)
+        {
+            Log.Info("Update", "User opened the releases page from the title bar");
+            OpenUrl(UpdateService.ReleasesPageUrl);
         }
 
         private void OpenUrl(string url)

@@ -12,6 +12,21 @@ namespace DarshanPlayer
 
         public event EventHandler? ActivityDetected;
 
+        // Last physical cursor position that produced an activity signal. Showing this layered
+        // window under a motionless cursor synthesises MouseEnter/MouseMove, which used to
+        // re-wake the controls in a loop and latch the bar on screen permanently.
+        private System.Drawing.Point _lastPointerPos;
+
+        private void RaiseActivityIfPointerMoved()
+        {
+            var pos = System.Windows.Forms.Cursor.Position;
+            if (pos == _lastPointerPos)
+                return;
+
+            _lastPointerPos = pos;
+            ActivityDetected?.Invoke(this, EventArgs.Empty);
+        }
+
         public FullscreenControlsWindow(MainViewModel vm)
         {
             InitializeComponent();
@@ -29,12 +44,12 @@ namespace DarshanPlayer
 
         private void RootSurface_MouseEnter(object sender, MouseEventArgs e)
         {
-            ActivityDetected?.Invoke(this, EventArgs.Empty);
+            RaiseActivityIfPointerMoved();
         }
 
         private void RootSurface_MouseMove(object sender, MouseEventArgs e)
         {
-            ActivityDetected?.Invoke(this, EventArgs.Empty);
+            RaiseActivityIfPointerMoved();
         }
 
         private void SeekSlider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

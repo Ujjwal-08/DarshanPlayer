@@ -202,6 +202,18 @@
 
                             <Separator Background="{StaticResource BorderBrush}" Margin="0,10,0,14"/>
 
+                            <!-- Windows integration -->
+                            <TextBlock Text="Windows integration" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <Button Content="Set as default player..." HorizontalAlignment="Left" Padding="14,6"
+                                    Command="{Binding SetAsDefaultPlayerCommand}"/>
+                            <TextBlock TextWrapping="Wrap" Margin="0,6,0,10" FontSize="11"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       Text="Opens Windows Default apps. Windows asks you to confirm the choice there, so nothing changes until you pick Darshan Player for your file types."/>
+                            <CheckBox Content="Open files in the already-running window"
+                                      IsChecked="{Binding SingleInstance, Mode=TwoWay}"/>
+
+                            <Separator Background="{StaticResource BorderBrush}" Margin="0,10,0,14"/>
+
                             <!-- Window -->
                             <TextBlock Text="Window" FontWeight="SemiBold" Margin="0,0,0,8"/>
                             <CheckBox Content="Always on top"
@@ -214,6 +226,26 @@
                             <CheckBox Content="Enable hardware acceleration"
                                       IsChecked="{Binding EnableHardwareAcceleration, Mode=TwoWay}"/>
                             <TextBlock Text="Takes effect on the next opened file."
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       FontSize="11" Margin="0,2,0,0"/>
+
+                            <Separator Background="{StaticResource BorderBrush}" Margin="0,12,0,14"/>
+
+                            <!-- Frame step -->
+                            <TextBlock Text="Frame step" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="44"/>
+                                </Grid.ColumnDefinitions>
+                                <Slider Grid.Column="0" Style="{StaticResource VolumeSlider}"
+                                        Minimum="1" Maximum="60" IsSnapToTickEnabled="True" TickFrequency="1"
+                                        VerticalAlignment="Center"
+                                        Value="{Binding FrameStepCount, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding FrameStepCount}" HorizontalAlignment="Right"
+                                           VerticalAlignment="Center" FontSize="12"/>
+                            </Grid>
+                            <TextBlock Text="Frames the , and . keys jump (when paused)."
                                        Foreground="{StaticResource TextMutedBrush}"
                                        FontSize="11" Margin="0,2,0,0"/>
 
@@ -235,7 +267,8 @@
                                    FontSize="11" Margin="0,0,0,10"/>
 
                         <ListView x:Name="ShortcutList" Grid.Row="1"
-                                  IsHitTestVisible="False"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.CanContentScroll="True"
                                   MaxHeight="380">
                             <ListView.View>
                                 <GridView>

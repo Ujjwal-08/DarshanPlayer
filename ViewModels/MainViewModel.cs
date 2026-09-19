@@ -22,6 +22,7 @@ namespace DarshanPlayer.ViewModels
         private readonly IMediaService _media;
         private readonly PlaylistService _playlist;
         private readonly SettingsService _settings;
+        private readonly WatchHistoryService _watchHistory;
         private readonly LanguageManager _lang;
         private readonly INotificationService _notifications;
         private readonly DispatcherTimer _uiTimer;
@@ -79,6 +80,7 @@ namespace DarshanPlayer.ViewModels
 
         // ─── Adjustment / subtitle-style panels ────────────
         private bool _isVideoAdjustVisible;
+        private bool _isAudioPanelVisible;
         private bool _isSubtitleStyleVisible;
         private string _selectedSubtitleFont = "Default";
 
@@ -242,7 +244,7 @@ namespace DarshanPlayer.ViewModels
         public long AudioDelay
         {
             get => _audioDelay;
-            set { _audioDelay = Math.Clamp(value, -2000, 2000); _media.AudioDelay = _audioDelay; OnPropertyChanged(); }
+            set { _audioDelay = Math.Clamp(value, -2000, 2000); _media.AudioDelay = _audioDelay; OnPropertyChanged(); OnPropertyChanged(nameof(AudioDelayLabel)); }
         }
 
         public string CurrentTitle { get => _currentTitle; private set { _currentTitle = value; OnPropertyChanged(); } }
@@ -331,6 +333,7 @@ namespace DarshanPlayer.ViewModels
 
         // ─── Video Adjustments (Phase 12.1) ────────────────
         public bool IsVideoAdjustVisible { get => _isVideoAdjustVisible; set { _isVideoAdjustVisible = value; OnPropertyChanged(); } }
+        public bool IsAudioPanelVisible { get => _isAudioPanelVisible; set { _isAudioPanelVisible = value; OnPropertyChanged(); } }
 
         public float Brightness
         {
@@ -545,9 +548,268 @@ namespace DarshanPlayer.ViewModels
             set
             {
                 _selectedAspectRatio = value; OnPropertyChanged();
-                _media.SetAspectRatio(value == "Default" || value == "Fill" ? null : value);
+
+                // "Fill" stretches the picture to the window, which needs the host's live pixel
+                // size — the view owns that and re-applies it on resize via AspectRatioNeedsFill.
+                // Previously it resolved to null, making it an exact duplicate of "Default" and so
+                // a menu entry that visibly did nothing.
+                if (value == "Fill")
+                {
+                    AspectRatioNeedsFill?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+
+                _media.SetAspectRatio(value == "Default" ? null : value);
             }
         }
+
+        /// <summary>
+        /// Raised when the "Fill" ratio is selected. The view responds by pushing the video host's
+        /// current width:height down to the media service.
+        /// </summary>
+        public event EventHandler? AspectRatioNeedsFill;
+
+        /// <summary>Advance to the next entry in <see cref="AspectRatios"/>, wrapping at the end.</summary>
+        public void CycleAspectRatio()
+        {
+            // IReadOnlyList has no IndexOf; an unknown current value yields -1 and so starts at 0.
+            int idx = -1;
+            for (int i = 0; i < AspectRatios.Count; i++)
+            {
+                if (AspectRatios[i] == SelectedAspectRatio) { idx = i; break; }
+            }
+
+            SelectedAspectRatio = AspectRatios[(idx + 1) % AspectRatios.Count];
+            _notifications.ShowInfo($"Aspect ratio: {SelectedAspectRatio}");
+        }
+
+        // ─── Video geometry (Phases 12.3, 12.5, 12.6) ────────────────────
+
+        public static readonly IReadOnlyList<string> CropModes =
+            new[] { "Off", "16:9", "16:10", "4:3", "1:1", "1.85:1", "2.21:1", "2.35:1", "2.39:1", "5:4", "5:3", "3:2" };
+
+        public static readonly IReadOnlyList<string> DeinterlaceModes =
+            new[] { "Off", "Discard", "Blend", "Mean", "Bob", "Linear", "X", "Yadif", "Yadif2x" };
+
+        private string _selectedCrop = "Off";
+        public string SelectedCrop
+        {
+            get => _selectedCrop;
+            set
+            {
+                _selectedCrop = value; OnPropertyChanged();
+                _media.CropGeometry = value == "Off" ? null : value;
+                _settings.Current.CropGeometry = value;
+                _settings.SaveDebounced();
+            }
+        }
+
+        private string _selectedDeinterlace = "Off";
+        public string SelectedDeinterlace
+        {
+            get => _selectedDeinterlace;
+            set
+            {
+                _selectedDeinterlace = value; OnPropertyChanged();
+                _media.DeinterlaceMode = value;
+                _settings.Current.DeinterlaceMode = value;
+                _settings.SaveDebounced();
+            }
+        }
+
+        // ─── Equalizer (Phase 11.3) ──────────────────────────────────────
+
+        public static IReadOnlyList<string> EqualizerPresetNames { get; } =
+            EqualizerPresets.Names.Concat(new[] { "Custom" }).ToList();
+
+        private EqualizerProfile _equalizer = new();
+
+        /// <summary>Live band values, bound by the equalizer panel's sliders.</summary>
+        public ObservableCollection<EqualizerBandVM> EqualizerBands { get; } = new();
+
+        private bool _equalizerEnabled;
+        public bool EqualizerEnabled
+        {
+            get => _equalizerEnabled;
+            set
+            {
+                _equalizerEnabled = value; OnPropertyChanged();
+                _settings.Current.EqualizerEnabled = value;
+                _settings.SaveDebounced();
+                PushEqualizer();
+            }
+        }
+
+        private string _selectedEqualizerPreset = EqualizerPresets.FlatName;
+        public string SelectedEqualizerPreset
+        {
+            get => _selectedEqualizerPreset;
+            set
+            {
+                if (string.IsNullOrWhiteSpace(value)) return;
+                _selectedEqualizerPreset = value; OnPropertyChanged();
+                _settings.Current.EqualizerPreset = value;
+
+                // "Custom" restores the user's own curve rather than overwriting it.
+                _equalizer = value == "Custom"
+                    ? _settings.Current.EqualizerCustom.Normalized()
+                    : EqualizerPresets.Get(value);
+
+                SyncEqualizerBands();
+                OnPropertyChanged(nameof(EqualizerPreAmp));
+                _settings.SaveDebounced();
+                PushEqualizer();
+            }
+        }
+
+        public float EqualizerPreAmp
+        {
+            get => _equalizer.PreAmp;
+            set
+            {
+                _equalizer.PreAmp = EqualizerProfile.ClampGain(value);
+                OnPropertyChanged();
+                OnBandEdited();
+            }
+        }
+
+        /// <summary>Rebuild or refresh the slider view-models from the active profile.</summary>
+        private void SyncEqualizerBands()
+        {
+            if (EqualizerBands.Count != EqualizerProfile.BandCount)
+            {
+                EqualizerBands.Clear();
+                for (int i = 0; i < EqualizerProfile.BandCount; i++)
+                {
+                    var vm = new EqualizerBandVM(i, EqualizerProfile.BandFrequencies[i], _equalizer.Bands[i]);
+                    vm.ValueChanged += (_, _) =>
+                    {
+                        _equalizer.Bands[vm.Index] = vm.Gain;
+                        OnBandEdited();
+                    };
+                    EqualizerBands.Add(vm);
+                }
+                return;
+            }
+
+            for (int i = 0; i < EqualizerProfile.BandCount; i++)
+                EqualizerBands[i].SetWithoutNotify(_equalizer.Bands[i]);
+        }
+
+        /// <summary>
+        /// A hand edit means the curve is no longer a named preset: switch to "Custom" and persist
+        /// it, so the user's work survives a restart.
+        /// </summary>
+        private void OnBandEdited()
+        {
+            if (_selectedEqualizerPreset != "Custom")
+            {
+                _selectedEqualizerPreset = "Custom";
+                _settings.Current.EqualizerPreset = "Custom";
+                OnPropertyChanged(nameof(SelectedEqualizerPreset));
+            }
+
+            _equalizer.Name = "Custom";
+            _settings.Current.EqualizerCustom = _equalizer.Clone();
+            _settings.SaveDebounced();
+            PushEqualizer();
+        }
+
+        private void PushEqualizer() =>
+            _media.SetEqualizer(EqualizerEnabled ? _equalizer : null);
+
+        public void ResetEqualizer()
+        {
+            SelectedEqualizerPreset = EqualizerPresets.FlatName;
+            _notifications.ShowInfo("Equalizer reset to flat");
+        }
+
+        // ─── Audio routing (Phases 11.4, 11.5) ───────────────────────────
+
+        public static readonly IReadOnlyList<AudioChannelMode> AudioChannelModes =
+            new[] { AudioChannelMode.Stereo, AudioChannelMode.Mono, AudioChannelMode.Left,
+                    AudioChannelMode.Right, AudioChannelMode.ReverseStereo };
+
+        private bool _audioNormalization;
+        public bool AudioNormalization
+        {
+            get => _audioNormalization;
+            set
+            {
+                _audioNormalization = value; OnPropertyChanged();
+                _media.AudioNormalization = value;
+                _settings.Current.AudioNormalization = value;
+                _settings.SaveDebounced();
+                _notifications.ShowInfo(value
+                    ? "Volume levelling on - applies from the next file"
+                    : "Volume levelling off - applies from the next file");
+            }
+        }
+
+        private AudioChannelMode _audioChannel = AudioChannelMode.Stereo;
+        public AudioChannelMode AudioChannel
+        {
+            get => _audioChannel;
+            set
+            {
+                _audioChannel = value; OnPropertyChanged();
+                _media.AudioChannel = value;
+                _settings.Current.AudioChannel = value;
+                _settings.SaveDebounced();
+            }
+        }
+
+        // ─── Chapters (Phase 9.4) ────────────────────────────────────────
+
+        public ObservableCollection<ChapterInfo> Chapters { get; } = new();
+
+        public bool HasChapters => Chapters.Count > 0;
+
+        private ChapterInfo? _selectedChapter;
+        public ChapterInfo? SelectedChapter
+        {
+            get => _selectedChapter;
+            set
+            {
+                _selectedChapter = value; OnPropertyChanged();
+                if (value != null) _media.CurrentChapter = value.Index;
+            }
+        }
+
+        public void RefreshChapters()
+        {
+            _media.RefreshChapters();
+            Chapters.Clear();
+            foreach (var c in _media.Chapters) Chapters.Add(c);
+            OnPropertyChanged(nameof(HasChapters));
+        }
+
+        public void NextChapter()
+        {
+            if (Chapters.Count == 0) { _notifications.ShowInfo("No chapters in this file"); return; }
+            var next = (_media.CurrentChapter + 1) % Chapters.Count;
+            _media.CurrentChapter = next;
+            _notifications.ShowInfo(Chapters[next].DisplayLabel);
+        }
+
+        public void PreviousChapter()
+        {
+            if (Chapters.Count == 0) { _notifications.ShowInfo("No chapters in this file"); return; }
+            var prev = (_media.CurrentChapter - 1 + Chapters.Count) % Chapters.Count;
+            _media.CurrentChapter = prev;
+            _notifications.ShowInfo(Chapters[prev].DisplayLabel);
+        }
+
+        // Instance-facing wrappers for the static option lists. XAML bindings resolve against the
+        // DataContext instance, so the static fields above are not directly bindable.
+        public IReadOnlyList<string> AspectRatiosList => AspectRatios;
+        public IReadOnlyList<string> CropModesList => CropModes;
+        public IReadOnlyList<string> DeinterlaceModesList => DeinterlaceModes;
+        public IReadOnlyList<string> EqualizerPresetNamesList => EqualizerPresetNames;
+        public IReadOnlyList<AudioChannelMode> AudioChannelModesList => AudioChannelModes;
+
+        /// <summary>Signed millisecond label for the A/V sync slider, e.g. "+250ms".</summary>
+        public string AudioDelayLabel => $"{AudioDelay:+0;-0;0}ms";
 
         public PlaylistService Playlist => _playlist;
         public ObservableCollection<string> RecentFiles { get; } = new();
@@ -578,7 +840,26 @@ namespace DarshanPlayer.ViewModels
         public ICommand ToggleMetadataCommand { get; }
         public ICommand NextFrameCommand { get; }
         public ICommand FrameBackCommand { get; }
+
+        /// <summary>Frames the ",", "." step controls jump. User-configurable in Settings (1–60).</summary>
+        public int FrameStepCount
+        {
+            get => _settings.Current.FrameStepCount;
+            set
+            {
+                var v = Math.Clamp(value, 1, 60);
+                if (_settings.Current.FrameStepCount == v) return;
+                _settings.Current.FrameStepCount = v;
+                _settings.SaveDebounced();
+                OnPropertyChanged();
+            }
+        }
+
+        // Frames → milliseconds at an assumed 30 fps (good enough for stepping; LibVLC has no
+        // reliable per-file fps accessor in this build).
+        private long FrameStepMs() => (long)(FrameStepCount * 1000.0 / 30.0);
         public ICommand AdjustSubtitleDelayCommand { get; }
+        public ICommand CycleAspectRatioCommand { get; }
         public ICommand AdjustAudioDelayCommand { get; }
         public ICommand SavePlaylistCommand { get; }
         public ICommand LoadPlaylistCommand { get; }
@@ -593,6 +874,11 @@ namespace DarshanPlayer.ViewModels
 
         // Video adjustments + subtitle styling (Phases 12.1 / 10.3)
         public ICommand ToggleVideoAdjustCommand { get; }
+        public ICommand ToggleAudioPanelCommand { get; }
+        public ICommand ResetEqualizerCommand { get; }
+        public ICommand NextChapterCommand { get; }
+        public ICommand GoToChapterCommand { get; }
+        public ICommand PreviousChapterCommand { get; }
         public ICommand ResetVideoAdjustmentsCommand { get; }
         public ICommand ToggleSubtitleStyleCommand { get; }
         public ICommand SetSubtitleColorCommand { get; }
@@ -612,6 +898,15 @@ namespace DarshanPlayer.ViewModels
             _settings = settings;
             _lang = lang;
             _notifications = notifications;
+
+            // Per-file resume state. Migration is idempotent, so running it on every startup
+            // safely upgrades settings.json written by builds that only stored a bare position.
+            _watchHistory = new WatchHistoryService(settings.Current.WatchHistoryEntries);
+            if (_watchHistory.MigrateLegacy(settings.Current.WatchHistory) > 0)
+            {
+                settings.Current.WatchHistory.Clear();
+                settings.SaveDebounced();
+            }
 
             // Load persisted settings
             _volume = settings.Current.Volume;
@@ -634,11 +929,40 @@ namespace DarshanPlayer.ViewModels
             _selectedSubtitleFont = string.IsNullOrWhiteSpace(settings.Current.SubtitleFontFamily)
                 ? "Default" : settings.Current.SubtitleFontFamily;
 
+            // Restore video geometry and audio routing. Set the backing fields directly and push to
+            // the media service once, rather than going through the setters — those would each
+            // trigger a redundant settings write during construction.
+            _selectedCrop = settings.Current.CropGeometry;
+            _selectedDeinterlace = settings.Current.DeinterlaceMode;
+            _audioNormalization = settings.Current.AudioNormalization;
+            _audioChannel = settings.Current.AudioChannel;
+            _media.CropGeometry = _selectedCrop == "Off" ? null : _selectedCrop;
+            _media.DeinterlaceMode = _selectedDeinterlace;
+            _media.AudioNormalization = _audioNormalization;
+            _media.AudioChannel = _audioChannel;
+
+            // Equalizer: build the band sliders, then push the curve only if it was left enabled.
+            _equalizerEnabled = settings.Current.EqualizerEnabled;
+            _selectedEqualizerPreset = EqualizerPresets.Exists(settings.Current.EqualizerPreset)
+                ? settings.Current.EqualizerPreset
+                : "Custom";
+            _equalizer = _selectedEqualizerPreset == "Custom"
+                ? settings.Current.EqualizerCustom.Normalized()
+                : EqualizerPresets.Get(_selectedEqualizerPreset);
+            SyncEqualizerBands();
+            PushEqualizer();
+
             // Keep the toast Popup's open-state in sync with the live toast collection.
             _notifications.Toasts.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasToasts));
 
             _selectedLanguage = Languages.FirstOrDefault(l => l.Code == settings.Current.Language)
                 ?? Languages[0];
+
+            // Bring back last session's playlist before recent files are surfaced, so the panel is
+            // already populated by the time the window is shown.
+            if (settings.Current.RestoreLastPlaylist)
+                _playlist.RestoreSession();
+
 
             foreach (var f in settings.Current.RecentFiles)
                 RecentFiles.Add(f);
@@ -649,7 +973,7 @@ namespace DarshanPlayer.ViewModels
             _selectedSubtitleTrack = default!;
 
             // Wire media events — stored as named fields so Dispose() can unsubscribe (A4)
-            _onPlaying = (_, _) => App.Current.Dispatcher.Invoke(() => { IsPlaying = true; IsMediaLoaded = true; RefreshTracks(); OnPropertyChanged(nameof(CurrentAudioTrackId)); OnPropertyChanged(nameof(CurrentSubtitleTrackId)); });
+            _onPlaying = (_, _) => App.Current.Dispatcher.Invoke(() => { IsPlaying = true; IsMediaLoaded = true; RefreshTracks(); RefreshChapters(); OnPropertyChanged(nameof(CurrentAudioTrackId)); OnPropertyChanged(nameof(CurrentSubtitleTrackId)); });
             _onPaused = (_, _) => App.Current.Dispatcher.Invoke(() => IsPlaying = false);
             _onStopped = (_, _) =>
             {
@@ -677,17 +1001,29 @@ namespace DarshanPlayer.ViewModels
                 IsMediaLoaded = false;
                 _notifications.ShowError("Playback failed — file may be unsupported or corrupt.");
             });
-            _onEndReached = (_, _) => App.Current.Dispatcher.Invoke(() => {
+            // CRITICAL: EndReached fires on LibVLC's internal event thread. Calling back into
+            // libvlc (MediaPlayer.Play via PlayNext) from that thread — or blocking it with a
+            // synchronous Dispatcher.Invoke — deadlocks/crashes the player. Use BeginInvoke so the
+            // native callback returns immediately and PlayNext runs later on the UI thread.
+            _onEndReached = (_, _) => App.Current.Dispatcher.BeginInvoke(new Action(() => {
                 _settings.Current.LastPlayedFile = string.Empty;
                 _settings.Current.LastPlaybackPosition = 0;
                 _settings.Save();
                 if (_playlist.HasNext()) _playlist.PlayNext();
                 else IsMediaLoaded = false;
-            });
+            }));
             _onLengthChanged = (_, e) => App.Current.Dispatcher.Invoke(() =>
             {
                 Duration = e.Length;
                 DurationStr = FormatTime(e.Length);
+
+                // Stamp the length onto the playlist row so its column stops reading "--:--".
+                // Taken from the player's own event rather than a separate LibVLC parse: parsing
+                // media on a background thread while playback is starting crashes LibVLC natively.
+                var current = _playlist.Current;
+                if (current != null && e.Length > 0)
+                    current.DurationTimeSpan = TimeSpan.FromMilliseconds(e.Length);
+
                 // Reset position fraction when new media loads
                 _currentMs = 0;
                 _position = 0;
@@ -713,13 +1049,9 @@ namespace DarshanPlayer.ViewModels
                 {
                     _settings.Current.LastPlaybackPosition = e.Time;
                     var path = _settings.Current.LastPlayedFile;
-                    _settings.Current.WatchHistory[path] = e.Time;
-                    // LRU eviction: keep newest 100 entries by removing one arbitrary key
-                    if (_settings.Current.WatchHistory.Count > 100)
-                    {
-                        var oldest = _settings.Current.WatchHistory.Keys.First();
-                        _settings.Current.WatchHistory.Remove(oldest);
-                    }
+                    // Duration is recorded alongside the position so the resume prompt can tell
+                    // "stopped halfway" from "watched to the end".
+                    _watchHistory.Record(path, e.Time, _duration);
                     _settings.SaveDebounced();
                 }
 
@@ -774,7 +1106,12 @@ namespace DarshanPlayer.ViewModels
                     }
                 }
             });
-            StopCommand = new RelayCommand(_media.Stop);
+            // Stop off the UI thread: MediaPlayer.Stop() blocks until LibVLC's threads halt, which
+            // deadlocks the VideoView-bound Dispatcher (AppHang). The Stopped event still resets UI.
+            StopCommand = new RelayCommand(() => Task.Run(() =>
+            {
+                try { _media.Stop(); } catch (Exception ex) { Debug.WriteLine($"[Stop] {ex.Message}"); }
+            }));
             SkipForwardCommand = new RelayCommand(() => _media.SkipBy(10_000));
             SkipBackCommand = new RelayCommand(() => _media.SkipBy(-10_000));
             NextTrackCommand = new RelayCommand(_playlist.PlayNext);
@@ -808,7 +1145,7 @@ namespace DarshanPlayer.ViewModels
 
                 try
                 {
-                    _media.Stop();
+                    // No pre-Stop: PlayAt → PlayRequested → PlayFile replaces current media.
                     _playlist.Clear();
                     _playlist.Add(lastFile);
                     _playlist.PlayAt(0);
@@ -852,8 +1189,11 @@ namespace DarshanPlayer.ViewModels
                 }
             });
 
-            NextFrameCommand = new RelayCommand(_media.NextFrame);
-            FrameBackCommand = new RelayCommand(() => { if (!IsPlaying && IsMediaLoaded) _media.SkipBy(-34); });
+            // Frame step jumps FrameStepCount frames. Both directions use SkipBy (time seek) so
+            // backward works too — LibVLC's native NextFrame() only steps forward and cannot reverse.
+            NextFrameCommand = new RelayCommand(() => { if (!IsPlaying && IsMediaLoaded) _media.SkipBy(FrameStepMs()); });
+            FrameBackCommand = new RelayCommand(() => { if (!IsPlaying && IsMediaLoaded) _media.SkipBy(-FrameStepMs()); });
+            CycleAspectRatioCommand = new RelayCommand(_ => CycleAspectRatio());
             AdjustSubtitleDelayCommand = new RelayCommand(p =>
             {
                 if (p is string s && int.TryParse(s, out int offset))
@@ -970,6 +1310,14 @@ namespace DarshanPlayer.ViewModels
             });
 
             ToggleVideoAdjustCommand = new RelayCommand(() => IsVideoAdjustVisible = !IsVideoAdjustVisible);
+            ToggleAudioPanelCommand = new RelayCommand(() => IsAudioPanelVisible = !IsAudioPanelVisible);
+            ResetEqualizerCommand = new RelayCommand(ResetEqualizer);
+            NextChapterCommand = new RelayCommand(NextChapter);
+            GoToChapterCommand = new RelayCommand(p =>
+            {
+                if (p is ChapterInfo c) SelectedChapter = c;
+            });
+            PreviousChapterCommand = new RelayCommand(PreviousChapter);
             ToggleSubtitleStyleCommand = new RelayCommand(() => IsSubtitleStyleVisible = !IsSubtitleStyleVisible);
 
             ResetVideoAdjustmentsCommand = new RelayCommand(() =>
@@ -1014,11 +1362,14 @@ namespace DarshanPlayer.ViewModels
                     SubtitleDelay = 0;
                     AudioDelay = 0;
                     Zoom = 0f; // auto-fit each new file
-                    _isChangingMedia = true;  // suppress async Stopped event during file switch (fix 8)
-                    _media.Stop();
-                    _isChangingMedia = false;
+                    // Do NOT call _media.Stop() here. On the UI thread it blocks until LibVLC's
+                    // decoder/output threads halt while the WPF VideoView holds the Dispatcher →
+                    // deadlock (Windows reports AppHang). PlayFile() calls Play(newMedia), which
+                    // replaces the current media without an explicit blocking Stop.
+                    _isChangingMedia = true;  // suppress any async Stopped event during the switch
                     IsMediaLoaded = true;
                     _media.PlayFile(item.FilePath);
+                    _isChangingMedia = false;
                     TryAutoLoadSubtitle(item.FilePath);
                     CurrentTitle = item.Title;
                     _settings.Current.LastPlayedFile = item.FilePath;
@@ -1049,18 +1400,20 @@ namespace DarshanPlayer.ViewModels
             var lastFile = _settings.Current.LastPlayedFile;
             if (string.IsNullOrEmpty(lastFile) || !File.Exists(lastFile)) return;
 
-            // Prefer WatchHistory dict; fall back to legacy scalar field
-            if (!_settings.Current.WatchHistory.TryGetValue(lastFile, out long savedPos))
-                savedPos = _settings.Current.LastPlaybackPosition;
-
-            if (savedPos > 0)
+            // The service applies the "not already finished" and "past the opening seconds"
+            // rules; a bare position is no longer enough to justify prompting.
+            if (!_watchHistory.TryGetResumePosition(lastFile, out long savedPos))
             {
-                // Migrate legacy scalar into dict
-                if (!_settings.Current.WatchHistory.ContainsKey(lastFile))
-                {
-                    _settings.Current.WatchHistory[lastFile] = savedPos;
-                    _settings.SaveDebounced();
-                }
+                // Fall back to the legacy scalar field for settings written before per-file
+                // history existed, applying the same end-of-media rule.
+                savedPos = _settings.Current.LastPlaybackPosition;
+                if (savedPos < WatchHistoryService.MinimumResumePositionMs) return;
+
+                _watchHistory.Record(lastFile, savedPos, 0);
+                _settings.SaveDebounced();
+            }
+
+            {
                 var fileName = Path.GetFileName(lastFile);
                 var time = FormatTime(savedPos);
                 ResumePromptMessage = $"Resume {fileName} at {time}?";
@@ -1077,40 +1430,68 @@ namespace DarshanPlayer.ViewModels
 
         private void OpenFile()
         {
-            var dlg = new Microsoft.Win32.OpenFileDialog
+            try
             {
-                Filter = "Media Files|*.mp4;*.mkv;*.avi;*.mov;*.wmv;*.flv;*.webm;*.mp3;*.aac;*.flac;*.wav;*.ogg;*.m4a;*.m4v;*.ts;*.m2ts;*.3gp|All Files|*.*",
-                Multiselect = true,
-                Title = "Open Media File(s)"
-            };
-            if (dlg.ShowDialog() == true)
-            {
+                var dlg = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = "Media Files|*.mp4;*.mkv;*.avi;*.mov;*.wmv;*.flv;*.webm;*.mp3;*.aac;*.flac;*.wav;*.ogg;*.m4a;*.m4v;*.ts;*.m2ts;*.3gp|All Files|*.*",
+                    Multiselect = true,
+                    Title = "Open Media File(s)"
+                };
+                if (dlg.ShowDialog() != true) return;
+
+                int before = _playlist.Items.Count;
                 foreach (var f in dlg.FileNames) { _playlist.Add(f); _settings.AddRecentFile(f); }
-                if (!string.IsNullOrEmpty(dlg.FileName)) _playlist.PlayAt(_playlist.Items.Count - dlg.FileNames.Length);
+                // Play the first item that was actually added (Add dedupes, so use the real
+                // before-count, not Count - FileNames.Length which can go negative on duplicates).
+                if (_playlist.Items.Count > before) _playlist.PlayAt(before);
                 RefreshRecentFiles();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[OpenFile] {ex}");
+                _notifications.ShowError($"Could not open file: {ex.Message}");
             }
         }
 
+        private static readonly HashSet<string> MediaExtensions =
+            new(MediaFormats.AllExtensions, StringComparer.OrdinalIgnoreCase);
+
         private void OpenFolder()
         {
-            using var dlg = new FolderBrowserDialog
+            try
             {
-                Description = "Select a folder to add to playlist",
-                UseDescriptionForTitle = true
-            };
-            if (dlg.ShowDialog() != DialogResult.OK) return;
-            var dir = dlg.SelectedPath;
-            var exts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                { ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mp3", ".aac", ".flac", ".wav", ".ogg", ".m4a", ".m4v", ".ts", ".3gp" };
-            var files = Directory.GetFiles(dir)
-                .Where(f => exts.Contains(Path.GetExtension(f)))
-                .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            foreach (var f in files) _playlist.Add(f);
-            if (files.Count > 0)
-                _playlist.PlayAt(_playlist.Items.IndexOf(_playlist.Items.First(i => i.FilePath == files[0])));
-            _settings.AddRecentFolder(dir);
-            RefreshRecentFolders();
+                // Native WPF folder picker (Microsoft.Win32) — the old WinForms FolderBrowserDialog
+                // could hard-crash the app under this WPF/.NET host.
+                var dlg = new Microsoft.Win32.OpenFolderDialog { Title = "Select a folder to add to playlist" };
+                if (dlg.ShowDialog() != true) return;
+
+                var dir = dlg.FolderName;
+                if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir)) return;
+
+                var files = Directory.EnumerateFiles(dir)
+                    .Where(f => MediaExtensions.Contains(Path.GetExtension(f)))
+                    .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (files.Count == 0)
+                {
+                    _notifications.ShowInfo("No playable media files found in that folder.");
+                    return;
+                }
+
+                int before = _playlist.Items.Count;
+                foreach (var f in files) _playlist.Add(f);
+                if (_playlist.Items.Count > before) _playlist.PlayAt(before);
+
+                _settings.AddRecentFolder(dir);
+                RefreshRecentFolders();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[OpenFolder] {ex}");
+                _notifications.ShowError($"Could not open folder: {ex.Message}");
+            }
         }
 
         private void OpenSubtitle()
@@ -1147,7 +1528,8 @@ namespace DarshanPlayer.ViewModels
             }
             try
             {
-                _media.Stop(); // Ensure clean state before adding and playing
+                // No pre-Stop: PlayItem → PlayRequested → PlayFile replaces the current media.
+                // A blocking Stop() on the UI thread here would deadlock the VideoView (AppHang).
                 _playlist.Add(path);
                 var item = _playlist.Items.FirstOrDefault(i => i.FilePath == path);
                 if (item != null) _playlist.PlayItem(item);
@@ -1275,12 +1657,7 @@ namespace DarshanPlayer.ViewModels
         private void OpenFolderPath(string dir)
         {
             if (!Directory.Exists(dir)) return;
-            var exts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                { ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mp3", ".aac", ".flac", ".wav", ".ogg", ".m4a", ".m4v", ".ts", ".3gp" };
-            var files = Directory.GetFiles(dir)
-                .Where(f => exts.Contains(Path.GetExtension(f)))
-                .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var files = MediaFormats.ExpandToMediaFiles(new[] { dir });
             foreach (var f in files) _playlist.Add(f);
             if (files.Count > 0)
                 _playlist.PlayAt(_playlist.Items.IndexOf(_playlist.Items.First(i => i.FilePath == files[0])));
@@ -1338,10 +1715,11 @@ namespace DarshanPlayer.ViewModels
         {
             string? firstAddedPath = null;
 
-            var sorted = paths
-                .Where(p => !string.IsNullOrWhiteSpace(p))
-                .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            // Expand folders and drop unsupported files first. Previously a dropped or shell-opened
+            // folder was added to the playlist as though it were a single media file.
+            var sorted = MediaFormats.ExpandToMediaFiles(paths
+                    .Where(p => !string.IsNullOrWhiteSpace(p))
+                    .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase));
 
             foreach (var path in sorted)
             {
@@ -1362,6 +1740,53 @@ namespace DarshanPlayer.ViewModels
                 _playlist.PlayItem(item);
             }
         }
+
+        /// <summary>
+        /// Handle files or folders arriving from Windows — Open with, a folder's "Play with", the
+        /// "Add to playlist" verb, a jump-list entry, or a second launch handed over by
+        /// <see cref="SingleInstance"/>.
+        /// </summary>
+        /// <param name="enqueue">Add without interrupting what is playing.</param>
+        public void OpenFromShell(IReadOnlyList<string> paths, bool enqueue)
+        {
+            var files = MediaFormats.ExpandToMediaFiles(paths);
+            if (files.Count == 0)
+            {
+                if (paths.Count > 0) _notifications.ShowWarning("Nothing playable in what was opened");
+                return;
+            }
+
+            foreach (var f in files)
+            {
+                _playlist.Add(f);
+                _settings.AddRecentFile(f);
+            }
+            RefreshRecentFiles();
+
+            // Queuing into an idle player should still start playback, as other players do.
+            bool idle = _playlist.Current == null || !IsMediaLoaded;
+            if (enqueue && !idle)
+            {
+                _notifications.ShowInfo(files.Count == 1
+                    ? $"Added to playlist: {Path.GetFileName(files[0])}"
+                    : $"Added {files.Count} files to playlist");
+                return;
+            }
+
+            var first = _playlist.Items.FirstOrDefault(i =>
+                string.Equals(i.FilePath, files[0], StringComparison.OrdinalIgnoreCase));
+            if (first != null) _playlist.PlayItem(first);
+        }
+
+        public bool SingleInstance
+        {
+            get => _settings.Current.SingleInstance;
+            set { _settings.Current.SingleInstance = value; _settings.SaveDebounced(); OnPropertyChanged(); }
+        }
+
+        public ICommand SetAsDefaultPlayerCommand => _setAsDefaultPlayerCommand ??=
+            new RelayCommand(AppIdentity.OpenDefaultAppsSettings);
+        private ICommand? _setAsDefaultPlayerCommand;
 
         public event PropertyChangedEventHandler? PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string? n = null) =>
