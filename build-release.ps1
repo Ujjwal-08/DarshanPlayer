@@ -16,8 +16,25 @@
 
 param(
     [Parameter(Mandatory = $true)] [string]$Version,
-    [switch]$SkipPack
+    [switch]$SkipPack,
+
+    # Code signing (optional). Supply exactly one of these; without either, the build
+    # produces unsigned artifacts exactly as before.
+    #
+    #   -SignTemplate  A command where {{file}} is replaced with each file to sign.
+    #                  Used by services that sign via their own CLI, e.g. SignPath.
+    #   -SignParams    Arguments passed to signtool.exe, for a certificate you hold
+    #                  yourself (e.g. Certum).
+    #
+    # vpk applies these to every PE file in the package and to Setup.exe, which is what
+    # the Microsoft Store requires for the MSI/EXE submission path.
+    [string]$SignTemplate,
+    [string]$SignParams
 )
+
+if ($SignTemplate -and $SignParams) {
+    throw "Use either -SignTemplate or -SignParams, not both."
+}
 
 $ErrorActionPreference = "Stop"
 $root      = $PSScriptRoot
@@ -84,11 +101,31 @@ if ($SkipPack) {
 Write-Host "==> [3/3] vpk pack $Version..." -ForegroundColor Cyan
 # packId must stay "DarshanPlayer" forever: it is the install folder and the update identity.
 # packTitle/packAuthors/icon are what users see in Start, on the Desktop and in Apps & Features.
-vpk pack --packId DarshanPlayer --packVersion $Version `
-    --packTitle "Darshan Player" --packAuthors "Ujjwal Dadhich" `
-    --icon (Join-Path $root "icon.ico") `
-    --shortcuts "Desktop,StartMenuRoot" `
-    --packDir $publish --mainExe DarshanPlayer.exe --outputDir $releases
+$packArgs = @(
+    "pack"
+    "--packId", "DarshanPlayer"
+    "--packVersion", $Version
+    "--packTitle", "Darshan Player"
+    "--packAuthors", "Ujjwal Dadhich"
+    "--icon", (Join-Path $root "icon.ico")
+    "--shortcuts", "Desktop,StartMenuRoot"
+    "--packDir", $publish
+    "--mainExe", "DarshanPlayer.exe"
+    "--outputDir", $releases
+)
+
+if ($SignTemplate) {
+    Write-Host "    signing via template" -ForegroundColor Cyan
+    $packArgs += @("--signTemplate", $SignTemplate)
+} elseif ($SignParams) {
+    Write-Host "    signing via signtool" -ForegroundColor Cyan
+    $packArgs += @("--signParams", $SignParams)
+} else {
+    Write-Warning "    building UNSIGNED - Windows will show SmartScreen warnings, and the"
+    Write-Warning "    Microsoft Store will reject an unsigned MSI/EXE submission."
+}
+
+vpk @packArgs
 if ($LASTEXITCODE -ne 0) { throw "vpk pack failed" }
 
 Write-Host "`nDone. Artifacts in $releases" -ForegroundColor Green
