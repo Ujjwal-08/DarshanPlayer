@@ -71,9 +71,12 @@ if (-not (Test-Path $cacheGen)) {
         -OutFile $zip
     $extract = Join-Path $toolDir "extract"
     Expand-Archive -Path $zip -DestinationPath $extract -Force
-    $home = Get-ChildItem $extract -Recurse -Filter "vlc-cache-gen.exe" | Select-Object -First 1
-    if (-not $home) { throw "vlc-cache-gen.exe not found in VLC archive" }
-    Move-Item $home.Directory.FullName $vlcHome -Force
+    # Not $home: that is a read-only PowerShell automatic variable, and assigning to it
+    # fails on a clean machine. Only ever hit when .vlctool is empty, which is why it
+    # went unnoticed locally.
+    $cacheGenExe = Get-ChildItem $extract -Recurse -Filter "vlc-cache-gen.exe" | Select-Object -First 1
+    if (-not $cacheGenExe) { throw "vlc-cache-gen.exe not found in VLC archive" }
+    Move-Item $cacheGenExe.Directory.FullName $vlcHome -Force
     Remove-Item $zip, $extract -Recurse -Force -ErrorAction SilentlyContinue
 }
 
