@@ -98,9 +98,20 @@
 
 > No .NET runtime needed — installer is fully self-contained.
 
-### Option 2 — Portable
+### Option 2 — winget
+
+```powershell
+winget install UjjwalDadhich.Darshan
+```
+
+### Option 3 — Portable
 
 Download the `.zip` from Releases, extract, run `DarshanPlayer.exe` directly.
+
+### Code signing
+
+Free code signing for this project is provided by [SignPath.io](https://signpath.io/),
+with a certificate issued by the [SignPath Foundation](https://signpath.org/).
 
 ---
 
