@@ -102,7 +102,9 @@ jobs:
             $path = Join-Path 'Releases' $f
             if (-not (Test-Path $path)) { throw "Missing expected artifact: $f" }
             $mb = [math]::Round((Get-Item $path).Length / 1MB, 1)
-            $sig = (Get-AuthenticodeSignature $path).Status
+            # Only PE files can carry an Authenticode signature; asking about a zip or
+            # json just returns UnknownError, which reads like a failure but isn't.
+            $sig = if ($f -like '*.exe') { (Get-AuthenticodeSignature $path).Status } else { 'n/a' }
             Write-Host ("{0,-42} {1,8} MB  signature: {2}" -f $f, $mb, $sig)
           }
 
