@@ -99,4 +99,4 @@ If this policy changes, the updated version will be published at this address wi
 Questions about this policy or about privacy in Darshan Player:
 
 - **Issues:** https://github.com/Ujjwal-08/DarshanPlayer/issues
-- **Email:** ujjwaldadhich08@gmail.com
+- **Email:** help@chapterchase.com
